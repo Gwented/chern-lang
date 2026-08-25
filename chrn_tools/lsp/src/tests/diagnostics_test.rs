@@ -276,7 +276,7 @@ async fn test_session_publishes_parse_diagnostics_in_absolute_positions() {
     let uri = workspace.write("embedded.chrn", text);
 
     let mut session = Session::new().await;
-    let diagnostics = session.open(&uri, text).await;
+    let diagnostics = session.open(&uri, &text).await;
 
     let parse_error = diagnostics
         .iter()
@@ -337,7 +337,7 @@ async fn test_session_suppresses_a_republish_when_diagnostics_are_unchanged() {
     let uri = workspace.write("main.chrn", text);
 
     let mut session = Session::new().await;
-    session.open(&uri, text).await;
+    session.open(&uri, &text).await;
 
     let digest_before = session
         .backend()
@@ -370,5 +370,113 @@ async fn test_session_suppresses_a_republish_when_diagnostics_are_unchanged() {
             .as_deref(),
         Some("let value = 4\n"),
         "the edit still reached analysis despite the suppressed publish"
+    );
+}
+
+/// A main module whose `@def` region is broken must not be re-parsed.
+///
+/// The compiler (`extract_main` + the orchestrator's `run_lexer`) marks such a module
+/// `BrokenRegion` and skips it, because re-parsing the malformed bytes only duplicates
+/// the config-load diagnostics as a parser cascade. The LSP now does the same: the
+/// missing-`@end` error appears once, sourced from `chrn-config`, with no
+/// `chrn-parser` follow-up.
+#[tokio::test(start_paused = true)]
+async fn test_session_broken_region_is_not_reparsed() {
+    let workspace = TempWorkspace::new("broken_region_not_reparsed");
+    let text = "@def\nlet = 3\n";
+    let uri = workspace.write("broken.chrn", text);
+
+    let mut session = Session::new().await;
+    let diagnostics = session.open(&uri, &text).await;
+
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.source.as_deref() == Some("chrn-config")),
+        "the config loader reports the broken region, got {diagnostics:?}"
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .all(|d| d.source.as_deref() != Some("chrn-parser")),
+        "the broken region must not be re-parsed into duplicate parser errors, got {diagnostics:?}"
+    );
+}
+
+/// Parse errors inside an imported module must surface when the importing document is
+/// analyzed, matching the orchestrator which merges every module's parser summary.
+/// The LSP used to keep only the main module's parse diagnostics.
+#[tokio::test(start_paused = true)]
+async fn test_session_reports_parse_errors_from_imported_modules() {
+    let workspace = TempWorkspace::new("imported_parse_errors");
+    let sub_uri = workspace.write("sub.chrn", "let = 3\n");
+    // Import paths canonicalize against the process cwd, so fixtures import by
+    // absolute path (see `create_pathbuf` in `mod_finder`).
+    let text = format!("import \"{}\"\nlet value = 2\n", sub_uri.path());
+    let uri = workspace.write("main.chrn", &text);
+
+    let mut session = Session::new().await;
+    let diagnostics = session.open(&uri, &text).await;
+
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.source.as_deref() == Some("chrn-parser")),
+        "a parse error in an imported module must be reported, got {diagnostics:?}"
+    );
+}
+
+/// Importing two modules under the same identifier must produce the compiler's
+/// duplicate-identifier diagnostic. `create_module_symbols` silently drops one of the
+/// colliding names, so without this check the LSP disagreed with the CLI about code
+/// that the compiler rejects.
+#[tokio::test(start_paused = true)]
+async fn test_session_reports_duplicate_import_identifiers() {
+    let workspace = TempWorkspace::new("duplicate_import_idents");
+    let alpha_uri = workspace.write("alpha.chrn", "let a = 1\n");
+    let beta_uri = workspace.write("beta.chrn", "let b = 2\n");
+    // Import paths canonicalize against the process cwd, so fixtures import by
+    // absolute path (see `create_pathbuf` in `mod_finder`).
+    let text = format!(
+        "import \"{}\"\nimport \"{}\" as alpha\nlet x = 3\n",
+        alpha_uri.path(),
+        beta_uri.path()
+    );
+    let uri = workspace.write("main.chrn", &text);
+
+    let mut session = Session::new().await;
+    let diagnostics = session.open(&uri, &text).await;
+
+    let dup = diagnostics
+        .iter()
+        .find(|d| d.message.contains("Duplicate import"))
+        .expect("the aliased collision must be reported as a duplicate import identifier");
+    assert!(
+        dup.message.contains("`alpha`"),
+        "the diagnostic names the colliding identifier, got {}",
+        dup.message
+    );
+}
+
+/// A file whose stem binds the reserved `core` identifier must be rejected with the
+/// compiler's reservation diagnostic instead of being loaded as a user module that
+/// shadows the compiler-synthesized core namespace.
+#[tokio::test(start_paused = true)]
+async fn test_session_rejects_import_of_reserved_core_module() {
+    let workspace = TempWorkspace::new("reserved_core_import");
+    let core_uri = workspace.write("core.chrn", "let c = 1\n");
+    // Import paths canonicalize against the process cwd, so fixtures import by
+    // absolute path (see `create_pathbuf` in `mod_finder`).
+    let text = format!("import \"{}\"\nlet x = 2\n", core_uri.path());
+    let uri = workspace.write("main.chrn", &text);
+
+    let mut session = Session::new().await;
+    let diagnostics = session.open(&uri, &text).await;
+
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.message.contains("`core` is a reserved module identifier")),
+        "importing a file named core.chrn must be rejected, got {diagnostics:?}"
     );
 }

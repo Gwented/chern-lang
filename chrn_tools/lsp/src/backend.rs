@@ -38,13 +38,14 @@
 
 use compilation::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use compilation::lexer::token::Token as ScriptToken;
+use compilation::module::module_concepts::ModuleState;
 use chrn_utils::source_map::source_span::SourceSpan;
 use compilation::lookup::scopes::scopes_concepts;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::Type;
 use compilation::parser::ast::ast_concepts::AbstractConfigKind;
 use compilation::semantic::hir::hir_impls::{ConfigRootKind, ImplHirKind, ImplMemberKind};
-use compilation::semantic::hir::hir_symbols::{Symbol, SymbolKind, SymbolOrigin, VariableState};
+use compilation::semantic::hir::hir_symbols::{Symbol, SymbolKind, VariableState};
 use parking_lot::RwLock;
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
@@ -56,7 +57,7 @@ use tower_lsp::lsp_types::{
 };
 use tower_lsp::{Client, LanguageServer, jsonrpc};
 
-use chrn_utils::id_types::{ImplMemberId, InternedId, ModuleId, TypeId};
+use chrn_utils::id_types::{ImplMemberId, InternedId, ModuleId, ScopeId, SymbolId, TypeId};
 use lang::config_schemas::{ConfigSchemaKind, get_cfg_schema};
 
 use crate::analyser::analyze_and_publish_task;
@@ -204,6 +205,9 @@ impl Backend {
         let mut interner = Intern::init();
         let path_id = interner.intern_path(&path_buf);
         let mut cfg_loader_warns = SourceDiagnosticSummary::default();
+        // Mirrors `extract_main`: a recovered-but-malformed region leaves the main
+        // module in `BrokenRegion`, which later stages treat as "do not re-parse".
+        let mut main_state = ModuleState::Loaded;
         let region = match ConfigLoader::new(
             chrn_utils::id_types::SourceRegionId::new(0),
             Cursor::new(text.as_bytes()),
@@ -224,6 +228,7 @@ impl Backend {
                     cfg_err,
                     broken_region.script_start,
                 );
+                main_state = ModuleState::BrokenRegion;
                 broken_region
             }
             ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
@@ -262,6 +267,7 @@ impl Backend {
             uri,
             Arc::clone(&text),
             region,
+            main_state,
             &mut chrn_cfg,
             &self.doc_cache,
             my_version,
@@ -438,6 +444,49 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
         //stand-in until it carries a type of its own.
         SymbolKind::Directive(_) | SymbolKind::ExternType => CompletionItemKind::KEYWORD,
     }
+}
+
+/// Collects the symbols reachable from `mod_id`'s scope tables, including the core
+/// scope injected into every user module.
+///
+/// Iterating the scope tables instead of filtering the global symbol arena by
+/// `SymbolOrigin` mirrors real scope lookup: compiler-generated namespace members
+/// such as the `i8::MAX` instantiation variables live in builtin-type namespace
+/// scopes that no module table contains, so they never leak into module completions.
+fn reachable_module_symbols(compiler: &ScriptCompiler, mod_id: ModuleId) -> Vec<SymbolId> {
+    let mut symbols = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for scope_id in &compiler.mods[mod_id].scopes {
+        for (_, sym_id) in compiler.scopes[*scope_id].scope.table.iter_interned() {
+            if seen.insert(sym_id) {
+                symbols.push(sym_id);
+            }
+        }
+    }
+    symbols
+}
+
+/// Resolves a visible symbol by interned name from the main module and returns its
+/// namespace scope when the symbol carries one.
+///
+/// Used by static-access completion so `i32::` finds the built-in type's namespace
+/// even though built-in types are not modules.
+fn namespace_scope_of_visible_symbol(
+    compiler: &ScriptCompiler,
+    name_id: InternedId,
+) -> Option<ScopeId> {
+    for sym_id in reachable_module_symbols(compiler, ModuleId::new(0)) {
+        let Some(sym) = compiler.symbols.get(sym_id) else {
+            continue;
+        };
+        if sym.name_id != name_id {
+            continue;
+        }
+        if let Some(scopes_concepts::AssociatedScopeKind::Scope(scope_id)) = sym.associated_scope {
+            return Some(scope_id);
+        }
+    }
+    None
 }
 
 pub(crate) struct ConfigCompletionCandidate {
@@ -1438,12 +1487,14 @@ impl LanguageServer for Backend {
             }
         }
 
-        let is_static_access_completion = byte_off >= 2
-            && state.text.as_bytes()[byte_off - 2] == b':'
-            && state.text.as_bytes()[byte_off - 1] == b':';
+        // Static access is detected at the word start so a partially typed member
+        // (`i32::MA`) still triggers it, not just an empty token after `::`.
+        let is_static_access_completion = start_b >= 2
+            && state.text.as_bytes()[start_b - 1] == b':'
+            && state.text.as_bytes()[start_b - 2] == b':';
         let mut static_target_name = None;
         if is_static_access_completion {
-            let (t_start, t_end) = crate::text::find_word_bounds(&state.text, byte_off - 2);
+            let (t_start, t_end) = crate::text::find_word_bounds(&state.text, start_b - 2);
             if t_start < t_end {
                 static_target_name = Some(&state.text[t_start..t_end]);
             }
@@ -1455,18 +1506,22 @@ impl LanguageServer for Backend {
             let mut items: Vec<CompletionItem> = Vec::new();
             if let Some(target_id) = state.interner.try_search_str(target_name)
                 && let Some(compiler) = &state.compiler
-                && let Some(module) = compiler.mods.iter().find(|m| m.name_id == target_id)
             {
-                if module.mod_id.id == 0 {
-                    // Current module: show all symbols except ScopeType::Var.
-                    // `Arena` does not implement `IntoIterator`; iterate over its
-                    // inner `items` vector.
-                    for sym in &compiler.symbols.items {
-                        if (matches!(sym.sym_origin, SymbolOrigin::Module(mid) if mid.id == 0)
-                            || matches!(sym.sym_origin, SymbolOrigin::Compiler))
-                            && sym.scope_origin != scopes_concepts::ScopeType::Var
-                            && !matches!(sym.kind, SymbolKind::Directive(_))
-                        {
+                if let Some(module) = compiler.mods.iter().find(|m| m.name_id == target_id) {
+                    if module.mod_id.id == 0 {
+                        // Current module: everything reachable through the module's own scope
+                        // tables plus the injected core scope. This mirrors real scope lookup,
+                        // so compiler-internal namespace members such as `i8::MAX` (which live
+                        // in builtin-type namespace scopes) are never offered here.
+                        for sym_id in reachable_module_symbols(compiler, module.mod_id) {
+                            let Some(sym) = compiler.symbols.get(sym_id) else {
+                                continue;
+                            };
+                            if sym.scope_origin == scopes_concepts::ScopeType::Var
+                                || matches!(sym.kind, SymbolKind::Directive(_))
+                            {
+                                continue;
+                            }
                             let sym_name = state.interner.search(sym.name_id);
                             if prefix.is_empty() || sym_name.starts_with(prefix) {
                                 let kind = symbol_completion_kind(compiler, sym);
@@ -1477,22 +1532,43 @@ impl LanguageServer for Backend {
                                 });
                             }
                         }
-                    }
-                } else {
-                    // Other modules: show only exported symbols
-                    for sym_id in &module.exports {
-                        // `sym_id: &SymbolId` (from iterating over `Vec<SymbolId>`),
-                        // dereference before calling `Arena::get`.
-                        if let Some(sym) = compiler.symbols.get(*sym_id) {
-                            let sym_name = state.interner.search(sym.name_id);
-                            if prefix.is_empty() || sym_name.starts_with(prefix) {
-                                let kind = symbol_completion_kind(compiler, sym);
-                                items.push(CompletionItem {
-                                    label: sym_name.to_string(),
-                                    kind: Some(kind),
-                                    ..Default::default()
-                                });
+                    } else {
+                        // Other modules: show only exported symbols
+                        for sym_id in &module.exports {
+                            // `sym_id: &SymbolId` (from iterating over `Vec<SymbolId>`),
+                            // dereference before calling `Arena::get`.
+                            if let Some(sym) = compiler.symbols.get(*sym_id) {
+                                let sym_name = state.interner.search(sym.name_id);
+                                if prefix.is_empty() || sym_name.starts_with(prefix) {
+                                    let kind = symbol_completion_kind(compiler, sym);
+                                    items.push(CompletionItem {
+                                        label: sym_name.to_string(),
+                                        kind: Some(kind),
+                                        ..Default::default()
+                                    });
+                                }
                             }
+                        }
+                    }
+                } else if let Some(scope_id) =
+                    namespace_scope_of_visible_symbol(compiler, target_id)
+                {
+                    // Not a module: a namespace-bearing symbol such as a built-in type.
+                    // `i32::` resolves through visible scope lookup to `i32`'s namespace
+                    // scope, whose members (`MAX`, `MIN`, …) are then offered.
+                    let ns_scope = &compiler.scopes[scope_id];
+                    for (_, member_id) in ns_scope.scope.table.iter_interned() {
+                        let Some(member) = compiler.symbols.get(member_id) else {
+                            continue;
+                        };
+                        let member_name = state.interner.search(member.name_id);
+                        if prefix.is_empty() || member_name.starts_with(prefix) {
+                            let kind = symbol_completion_kind(compiler, member);
+                            items.push(CompletionItem {
+                                label: member_name.to_string(),
+                                kind: Some(kind),
+                                ..Default::default()
+                            });
                         }
                     }
                 }

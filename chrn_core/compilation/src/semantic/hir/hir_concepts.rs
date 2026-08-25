@@ -52,6 +52,13 @@ impl Table {
             interned_to_sym: HashMap::with_capacity(interned_to_sym_cap),
         }
     }
+
+    /// Iterates every `(name, symbol)` pair registered under an interned
+    /// identifier. Read-only view for consumers outside this crate, such as the
+    /// LSP, which enumerate scope contents without mutating them.
+    pub fn iter_interned(&self) -> impl Iterator<Item = (InternedId, SymbolId)> + '_ {
+        self.interned_to_sym.iter().map(|(name, sym)| (*name, *sym))
+    }
 }
 
 #[derive(Debug)]

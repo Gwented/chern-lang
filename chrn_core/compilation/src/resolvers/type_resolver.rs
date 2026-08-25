@@ -47,10 +47,10 @@ use crate::parser::ast::ast_stmts::AbstractStmt;
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::resolvers::resolver_state::ResolverState;
 use crate::resolvers::type_resolver::cfg_ctx::{
-    ConfigMemberComplexContext, ConfigMemberContextKind,
+    ConfigMemberComplexContext, ConfigMemberContextKind, ConfigMemberOutput,
 };
 use crate::resolvers::typechecker;
-use crate::script_compiler::{self, ScriptCompiler, compiler_constants};
+use crate::script_compiler::{ScriptCompiler, compiler_constants};
 use crate::semantic::checker_helpers::{DuplicateIdentResult, DuplicateTracker};
 use crate::semantic::compilation_unit::CompilationUnit;
 use crate::semantic::evaluator::UnaryOpResult;
@@ -1071,7 +1071,7 @@ impl<'res> TypeResolver<'res> {
             // that will be created inside the recursive resolution method.
             // let scope = &self.compiler.scopes[ScopeId::new(7)].scope;
 
-            let member_id = match member_lookup::lookup_member(
+            let memb_id = match member_lookup::lookup_member(
                 self.compiler,
                 found_type_id,
                 //TODO: CHANGE THIS
@@ -1235,7 +1235,7 @@ impl<'res> TypeResolver<'res> {
                 &mut seen_cfg_idents,
                 // NOTE: Opt ident tracker
                 opt_ident_tracker,
-                member_id,
+                memb_id,
                 abs_inner_cfg,
                 scope_type,
                 1,
@@ -1736,10 +1736,82 @@ impl<'res> TypeResolver<'res> {
         cfg_override.common.cfg_members = cfg_def_members;
     }
 
-    fn lookup_cfg_memb_id() {}
+    // Complex can only take types so it's identifier MUST match to a symbol which must be a type, which
+    // must have members.
+    //
+    // Override should have the same type logic, with the namespace being possible as well.
+    // The root maybe dictates the allowance because in override if we start with a namespace, we have
+    // no members. But if the root is a type, the namespace parts must just route the already present
+    // type info, only switching the context being applied.
+    //
+    // This is actionable but is this the right abstraction? This is inserting an entirely different
+    // concept inside structures, which could be "types{}" or any other added intrinsic, which could
+    // stack and get very confusing. The scope traversal also may be semantically a bit confusing
+    // since it's types {} possibly inside the struct parent, inside the members, possible other
+    // override members, maybe we just remove the types {} namespace? It's here to make sure any
+    // future updates can just add a namespace to override, but
+    fn lookup_cfg_memb(
+        &mut self,
+        sp_path_segs: &[SpannedContainer<PathSegment>],
+        scope_type: ScopeType,
+    ) -> ConfigMemberOutput {
+        // let sym_id_opt = match &last_seg.inner {
+        //     PathSegment::Ident(interned_id) => {
+        //         //TODO: This preset err for this maybe
+        //         // Java uppser is being searched here, maybe because the previous is java
+        //         // upper itself, and it's basically asking, is java upper in java upper,
+        //         // given that we are inside java upper?
+        //         match scopes::find_sym_id(
+        //             self.compiler,
+        //             last_scope,
+        //             *interned_id,
+        //             scope_type,
+        //             lookup_pat,
+        //             lookup_pref,
+        //         ) {
+        //             Some(SymbolLookupOutput { found_sym_id, .. }) => found_sym_id.into(),
+        //             None => {
+        //                 let lookup_err = LookupError::SymbolNotFound {
+        //                     sp_invalid_name_id: SpannedContainer::new(*interned_id, last_seg.span),
+        //                     scope_searched: last_scope,
+        //                 };
+        //                 preset_reporter::report_preset(
+        //                     self.compiler,
+        //                     &mut self.summary,
+        //                     lookup_err.into(),
+        //                     env.region,
+        //                     self.cfg,
+        //                     self.interner,
+        //                 );
+        //                 None
+        //             }
+        //         }
+        //     }
+        //     PathSegment::Generic(_) => {
+        //         let builder = SourceDiagnostic::builder(
+        //             ErrorCode::GenericsErr.into(),
+        //             DiagnosticLevel::Error,
+        //             "Config root must be a user defined type",
+        //             env.region.path_id,
+        //         )
+        //         .add_annotation(last_seg.span, AnnotationKind::Primary, None);
+        //         self.summary.push_diag(builder.build());
+        //         None
+        //     }
+        // };
+        todo!()
+    }
 
     //TODO: For resolve config member, pass in kind, which routes to declared methods. Call method
     //inside initial, then inside the router after getting root which is required.
+    //
+    //Both use options.
+    //
+    //Complex:
+    // `TypeId` only as root. members must be field or enum members.
+    //
+    //Override:
+    //`SymbolId` as root, which can be a namespace or type.
 
     /// Method that recursively resolves `ConfigDefMember` and `OptionAssignmentMember`
     ///

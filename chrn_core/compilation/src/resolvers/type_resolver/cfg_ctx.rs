@@ -11,6 +11,12 @@ use chrn_utils::id_types::{SymbolId, TypeId};
 // }
 //
 
+#[derive(Debug)]
+pub(super) enum ConfigMemberOutput {
+    Namespace(SymbolId),
+    Type(TypeId),
+}
+
 //TODO: We may need 3 different contexts embedded total.
 //1: Complex, which only takes in a type
 //2: Override namespace from an intrinsic like "JAVA"

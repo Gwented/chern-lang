@@ -3,6 +3,8 @@
 set -e
 
 echo "Running tests"
+# Only tests where tests exist and the code surrounding code
+# is intended to work
 (cd chrn_core/ && cargo t)
 (cd chrn_tools/cli && cargo t)
 (cd chrn_tools/lsp && cargo t)

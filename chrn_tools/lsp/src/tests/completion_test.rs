@@ -66,3 +66,60 @@ async fn completion_in_the_script_section_offers_keywords() {
         "section markers are offered, got {labels:?}"
     );
 }
+
+/// Static access on a built-in type offers its namespace members (`MAX`, `MIN`),
+/// which live in builtin-type namespace scopes rather than any module.
+#[tokio::test(start_paused = true)]
+async fn static_access_on_a_builtin_type_offers_its_namespace_members() {
+    let workspace = TempWorkspace::new("builtin_static_completion");
+    let text = "let flag = 3\ni32::M\n";
+    let uri = workspace.write("main.chrn", text);
+
+    let mut session = Session::new().await;
+    session.open(&uri, text).await;
+
+    // Cursor directly after the typed prefix so the `::` trigger applies.
+    let mut pos = position_of(text, "M", 0);
+    pos.character += 1;
+
+    let response = session
+        .completion(&uri, pos, None)
+        .await
+        .expect("the script section completes");
+    let CompletionResponse::Array(items) = response else {
+        panic!("the server answers completion with a plain item array");
+    };
+
+    let labels: Vec<&str> = items.iter().map(|item| item.label.as_str()).collect();
+    assert!(labels.contains(&"MAX"), "`i32::` completes MAX, got {labels:?}");
+    assert!(labels.contains(&"MIN"), "`i32::` completes MIN, got {labels:?}");
+}
+
+/// Completing inside the current module's namespace never offers compiler-internal
+/// namespace members such as `i8::MAX`; they are unreachable through scope lookup.
+#[tokio::test(start_paused = true)]
+async fn current_module_completion_hides_builtin_namespace_members() {
+    let workspace = TempWorkspace::new("module_scope_completion");
+    let text = "let flag = 3\nmain::M\n";
+    let uri = workspace.write("main.chrn", text);
+
+    let mut session = Session::new().await;
+    session.open(&uri, text).await;
+
+    // Cursor directly after the typed prefix so the `::` trigger applies.
+    let mut pos = position_of(text, "main::M", 0);
+    pos.character += "main::M".len() as u32;
+
+    let response = session
+        .completion(&uri, pos, None)
+        .await
+        .expect("the script section completes");
+    let CompletionResponse::Array(items) = response else {
+        panic!("the server answers completion with a plain item array");
+    };
+
+    let max_count = items.iter().filter(|item| item.label == "MAX").count();
+    let min_count = items.iter().filter(|item| item.label == "MIN").count();
+    assert_eq!(max_count, 0, "MAX is not reachable from a module, got {max_count} items");
+    assert_eq!(min_count, 0, "MIN is not reachable from a module, got {min_count} items");
+}

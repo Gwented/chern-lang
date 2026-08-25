@@ -32,6 +32,9 @@ pub const MAX_EXPR_NODES: u32 = 1; // 5,000,000
 /// a given region can occupy, which may be a full file or just from `@def` to `@end`.
 pub const MAX_REGION_SIZE: usize = 1024 * 32;
 
+/// File extension for `chrn`
+pub const CHRN_FILE_EXTENSION: &str = "chrn";
+
 //NOTE: If concat is added then a high value for max string length can prevent over-allocation in
 //that particular scenario. This doesn't have to be accounted for right now since there is no concat
 //so a string can only be as large as a region, which is not very large.

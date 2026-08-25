@@ -851,6 +851,8 @@ impl ScriptCompiler {
 
         let table = &mut self.scopes[core_scope_id].scope.table;
         core_mod.exports.reserve_exact(table.interned_to_sym.len());
+        // Why is the lsp showing min and max from modules when it's not possible through scope
+        // lookup?
 
         // Exporting all created symbols from core
         for sym_id in table.interned_to_sym.values().copied() {

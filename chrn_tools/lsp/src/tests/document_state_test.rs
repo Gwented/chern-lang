@@ -218,6 +218,29 @@ async fn test_hover_reports_the_inferred_type_of_a_binding() {
     );
 }
 
+/// Hover over a built-in namespace member written in real code (`i32::MAX`) resolves
+/// through the semantic map to the instantiation variable and reports its value.
+#[tokio::test(start_paused = true)]
+async fn test_hover_resolves_builtin_namespace_members() {
+    let workspace = TempWorkspace::new("hover_builtin_member");
+    let text = "@def\nlet limit = i32::MAX\n@end\n";
+    let uri = workspace.write("builtin_member.chrn", text);
+
+    let mut session = Session::new().await;
+    session.open(&uri, text).await;
+
+    let hover = session
+        .hover(&uri, position_of(text, "MAX", 0))
+        .await
+        .expect("hovering `i32::MAX` returns contents");
+
+    assert!(
+        hover_text(&hover).contains("MAX"),
+        "hover names the member, got `{}`",
+        hover_text(&hover)
+    );
+}
+
 /// Go-to-definition inside an embedded `@def` region must return the declaration in
 /// absolute file coordinates, using the target region's `script_start`.
 #[tokio::test(start_paused = true)]

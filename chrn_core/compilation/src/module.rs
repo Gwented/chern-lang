@@ -220,6 +220,7 @@ pub fn extract_modules(
     // If this is true then the outer loop must stop (HELLO I AM A LOOP LABEL)
     // Only used when max modules have been exceeded
     let mut should_break_outer = false;
+
     let max_mods_usize = chrn_utils::MAX_MODULES as usize;
 
     // Duplicate tracker that will be re-used across different module contexts.
@@ -545,7 +546,7 @@ fn resolve_module(
     //THE BEHAVIOR IS DEFINED IT IS NOT UB,ekAPEKAIOJE$#$#
     if official_ident.id == intern::INTERNED_CORE {
         //TODO: Maybe rename to compiler internals for the error codes to converge
-        let core_msg = "`core` is the only identifier that can't be used for modules";
+        let core_msg = "`core` is a reserved module identifier";
         let builder =
             SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, sp_path_id.inner);
         summary.push_diag(builder.build());

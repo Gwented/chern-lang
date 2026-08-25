@@ -42,6 +42,7 @@ use compilation::lexer::token::Token as ScriptToken;
 use compilation::lexer::trivia::Trivia;
 use compilation::lookup::scopes;
 use compilation::module::module_concepts::ImportKind;
+use compilation::module::module_concepts::ModuleState;
 use compilation::lookup::scopes::scopes_concepts::AssociatedScopeKind;
 use compilation::lookup::scopes::scopes_concepts::ScopeLookupPattern;
 use compilation::lookup::scopes::scopes_concepts::ScopeLookupPreferenceFlags;
@@ -272,15 +273,17 @@ impl DocumentState {
 
         let mut all_mods = Vec::with_capacity(sub_mods.len() + 1);
         all_mods.push(main_mod);
-        let mut next_id = 1;
-        for mod_opt in sub_mods {
+        // Slot index + 1 is the module id, including failed slots: ids were
+        // assigned per seen path during resolution, so `None` gaps must keep
+        // consuming an id to stay aligned with the region arena.
+        for (slot, mod_opt) in sub_mods.into_iter().enumerate() {
+            let next_id = slot as u32 + 1;
             if let Some(mut inner) = mod_opt {
                 if inner.mod_id.id != next_id {
                     inner.mod_id.id = next_id;
                 }
                 all_mods.push(inner);
             }
-            next_id += 1;
         }
 
         // `ScriptCompiler::init` takes an `Arena<Module, ModuleId>`.  The compiler
@@ -294,6 +297,14 @@ impl DocumentState {
         }
 
         for (mod_idx, module) in compiler.mods.iter().enumerate() {
+            // Mirrors the orchestrator's `run_lexer`: a module whose config region
+            // failed to load keeps its region (so its diagnostics stay resolvable)
+            // but is not re-lexed or parsed.  Parsing the malformed bytes would only
+            // duplicate the config-load diagnostics as parser cascades.
+            if module.state != ModuleState::Loaded {
+                continue;
+            }
+
             let src_region_id = match module.region_id {
                 Some(rid) => rid,
                 None => continue,
@@ -323,9 +334,11 @@ impl DocumentState {
 
             let (ast_info, mut errs) = parse_result;
 
-            if mod_idx == 0 {
-                self.parse_errors.append_summary(&mut errs);
-            }
+            // Every module's parse diagnostics are kept, matching the orchestrator
+            // which merges the parser summary for each module.  Dropping the
+            // imported modules' summaries here used to silence parse errors in
+            // imported files entirely.
+            self.parse_errors.append_summary(&mut errs);
 
             all_asts[mod_idx] = Some(ast_info);
         }
@@ -472,10 +485,10 @@ impl DocumentState {
         let mut map = Vec::new();
 
         // 1. Symbol Definitions
+        // Only main-module declarations are indexed; compiler-generated symbols
+        // carry no `ast_id`, so the check below already excludes them.
         for (i, sym) in compiler.symbols.iter().enumerate() {
-            if matches!(sym.sym_origin, SymbolOrigin::Module(mid) if mid.id == 0)
-                || matches!(sym.sym_origin, SymbolOrigin::Compiler)
-            {
+            if matches!(sym.sym_origin, SymbolOrigin::Module(mid) if mid.id == 0) {
                 let sym_id = SymbolId::new(i as u32);
                 if let Some(ast_id) = sym.ast_id
                     && let Some(Some(ast)) = self.asts.first()
@@ -708,12 +721,15 @@ impl DocumentState {
             }
         }
 
-        // 5. Compiler-origin symbols (directives, etc.) — match by name against Id tokens
-        // Pre-index compiler-origin symbols by name_id for O(1) lookup.
+        // 5. Compiler-origin symbols (directives) — match by name against Id tokens
+        // Pre-index directive symbols by name_id for O(1) lookup. Matching on
+        // `SymbolKind::Directive` rather than `sym_origin` keeps other compiler-
+        // generated symbols (builtin namespace members such as `i8::MAX`, extern
+        // namespaces) out of the map, since they are not reachable as bare tokens.
         let directive_symbols: HashMap<u32, SymbolId> = compiler
             .symbols
             .iter()
-            .filter(|sym| sym.ast_id.is_none() && matches!(sym.sym_origin, SymbolOrigin::Compiler))
+            .filter(|sym| matches!(sym.kind, SymbolKind::Directive(_)))
             .map(|sym| (sym.name_id.id, sym.sym_id))
             .collect();
 
@@ -814,12 +830,18 @@ impl DocumentState {
 
         let mut lsp_diags = Vec::new();
         let doc_len = self.text.len();
+
+        // The region-start map and line table are stage-independent: every summary
+        // converts against the same arena and the same document text.  Building
+        // them once here replaces one full-document `LineIndex` per stage.
+        let script_starts = analyser::region_script_starts(&self.region_arena);
+        let lines = crate::text::LineIndex::new(&self.text);
         for (summary, source) in stages {
-            analyser::push_diagnostic(
+            analyser::push_diagnostic_inner(
                 &mut lsp_diags,
                 summary.diags(),
-                &self.region_arena,
-                &self.text,
+                &script_starts,
+                &lines,
                 doc_len,
                 source,
             );
@@ -1878,6 +1900,32 @@ impl RefCollector<'_> {
                     },
                     member_type_id,
                 )
+            }
+            Type::BuiltinTypeInfo(builtin_info) => {
+                // Built-in namespace members such as `i32::MAX` live in the
+                // built-in type's associated namespace scope, not in member
+                // arenas like struct fields do.
+                let member_sym_id = compiler
+                    .symbols
+                    .get(builtin_info.sym_id)
+                    .and_then(|builtin_sym| match builtin_sym.associated_scope {
+                        Some(AssociatedScopeKind::Scope(scope_id)) => Some(scope_id),
+                        _ => None,
+                    })
+                    .and_then(|scope_id| {
+                        compiler.scopes[scope_id]
+                            .scope
+                            .table
+                            .iter_interned()
+                            .find(|(name, _)| *name == name_id)
+                            .map(|(_, sym_id)| sym_id)
+                    });
+                let Some(member_sym_id) = member_sym_id else {
+                    return PathCursor::Opaque;
+                };
+                self.map.push((span, SemanticEntity::Symbol(member_sym_id)));
+                // Namespace members cannot own further path segments.
+                return PathCursor::Opaque;
             }
             _ => return PathCursor::Opaque,
         };
