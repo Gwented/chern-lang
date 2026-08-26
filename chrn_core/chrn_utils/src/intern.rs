@@ -86,6 +86,7 @@ pub const INTERNED_UNKNOWN: u32 = 76;
 pub const INTERNED_TYPES_LOWER: u32 = 77;
 pub const INTERNED_MAX_UPPER: u32 = 78;
 pub const INTERNED_MIN_UPPER: u32 = 79;
+pub const INTERNED_FOR: u32 = 80;
 
 // Collection,
 // CharacterMappable,
@@ -185,6 +186,7 @@ pub static PRELOADED_STRINGS: [(&str, u32); INTERNER_PRELOAD_SIZE] = [
     ("types", INTERNED_TYPES_LOWER),
     ("MAX", INTERNED_MAX_UPPER),
     ("MIN", INTERNED_MIN_UPPER),
+    ("for", INTERNED_FOR),
 ];
 
 /// Interner used for the chrn language
@@ -200,7 +202,7 @@ pub struct Intern {
     pos: usize,
 }
 
-pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_MIN_UPPER + 1) as usize;
+pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_FOR + 1) as usize;
 
 impl Intern {
     /// Creates interner that pre-loads itself with all defined interned string literals.

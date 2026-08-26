@@ -71,8 +71,9 @@ pub enum ChrnClassifier {
     SectVar,
     SectNest,
     Self_,
+    For,
     SectComplex,
-    SectOverride,
+    Override,
     Directive,
     DirectiveWarn,
     DirectiveIgnore,
@@ -177,7 +178,7 @@ impl Display for ChrnClassifier {
             ChrnClassifier::SectVar => "var",
             ChrnClassifier::SectNest => "nest",
             ChrnClassifier::SectComplex => "complex",
-            ChrnClassifier::SectOverride => "override",
+            ChrnClassifier::Override => "override",
             ChrnClassifier::IsEmpty => "IsEmpty",
             ChrnClassifier::IsWhitespace => "IsWhitespace",
             ChrnClassifier::FuncRange => "Range",
@@ -260,6 +261,7 @@ impl Display for ChrnClassifier {
             ChrnClassifier::ConfigMember => "config member",
             ChrnClassifier::Parameter => "parameter",
             ChrnClassifier::ConfigOption => "option",
+            ChrnClassifier::For => "for",
         };
         write!(f, "{out}")
     }

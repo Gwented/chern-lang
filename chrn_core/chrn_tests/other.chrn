@@ -1,3 +1,5 @@
+import "../chrn_core/chrn_tests/def.chrn"
+
 nest->
     struct First {second: Second}
     struct Second {third: Third}

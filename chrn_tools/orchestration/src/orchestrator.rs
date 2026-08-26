@@ -69,6 +69,10 @@ pub fn run_all(
         compiler_store.asts.push(ast_info_opt);
     }
 
+    if reporter.diag_summary().has_err() {
+        return Err(ScriptError::Semantic);
+    }
+
     // Storing this so that the compiler can be borrowed without conflicts and keep resolution incremental
     let mod_len = compiler.mods.len();
 
@@ -141,36 +145,10 @@ pub fn run_all(
         compiler,
     );
     for i in 0..mod_len {
-        // If there is no environment to use then it's not fit for resolution
-        //WARN: When Rust sees that the resolver env function created environments from compiler
-        //store, it loses borrow checking accuracy so the interner can't be mutable during type
-        //resolution unless we can clearly show that each borrow is NOT connected to the interner.
-        //Will likely just go for each env being module id and pass in the entire store as mutable
-        //by default. Or, just the pieces.
-
-        let i_u32 = i as u32;
-
-        let ast = match &compiler_store.asts[i] {
-            Some(a) => a,
+        let current_env = match &resolver_envs[i] {
+            Some(env) => env,
             None => continue,
         };
-
-        let region = match compiler_store.region_arena.get(SourceRegionId::new(i_u32)) {
-            Some(reg) => reg,
-            None => continue,
-        };
-
-        let compilation_syms = match &compiler_store.compilation_syms[i] {
-            Some(syms) => syms,
-            None => continue,
-        };
-
-        let current_env = ResolverEnv::new(ast, region, ModuleId::new(i_u32), compilation_syms);
-
-        // let current_env = match &resolver_envs[i] {
-        //     Some(env) => env,
-        //     None => continue,
-        // };
 
         reporter.merge_summary_safe(ty_resolver.resolve(&current_env));
     }

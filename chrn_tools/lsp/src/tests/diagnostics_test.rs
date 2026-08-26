@@ -5,6 +5,7 @@ use chrn_utils::core_error::ConfigLoadError;
 use chrn_utils::id_types::{PathId, SourceRegionId};
 use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
+use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSink;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_region::SourceRegion;
 use chrn_utils::source_map::source_span::SourceSpan;
@@ -478,5 +479,179 @@ async fn test_session_rejects_import_of_reserved_core_module() {
             .iter()
             .any(|d| d.message.contains("`core` is a reserved module identifier")),
         "importing a file named core.chrn must be rejected, got {diagnostics:?}"
+    );
+}
+
+/// An import that is rejected after its path is seen must not consume a `ModuleId`.
+///
+/// A reserved-but-unused id left a hole that pushed every later module's id past its
+/// arena slot, and `ScriptCompiler::init` derives the synthesized core module's id
+/// from `mods.len()` — so the shifted import resolved into core's namespace and its
+/// own exports vanished. The CLI reports only the rejected import here.
+#[tokio::test(start_paused = true)]
+async fn test_session_rejected_import_does_not_shift_later_module_ids() {
+    let workspace = TempWorkspace::new("rejected_import_id_shift");
+    let core_uri = workspace.write("core.chrn", "export let C = 1\n");
+    let good_uri = workspace.write("good.chrn", "export let GOOD = 1\n");
+    // Import paths canonicalize against the process cwd, so fixtures import by
+    // absolute path (see `create_pathbuf` in `mod_finder`).
+    let text = format!(
+        "import \"{}\"\nimport \"{}\"\nlet x = good::GOOD\n",
+        core_uri.path(),
+        good_uri.path()
+    );
+    let uri = workspace.write("main.chrn", &text);
+
+    let mut session = Session::new().await;
+    let diagnostics = session.open(&uri, &text).await;
+
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.message.contains("`core` is a reserved module identifier")),
+        "the rejected import is still reported, got {diagnostics:?}"
+    );
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|d| d.message.contains("`GOOD`")),
+        "the surviving import keeps its own namespace, got {diagnostics:?}"
+    );
+}
+
+/// Every entry point interns a document's path through `uri_to_path`, so a path that
+/// needs percent-encoding in its URI still yields one `PathId`.
+///
+/// `Backend::get_analyzed_state` used to intern `Url::path` directly while the async
+/// analysis task interned the decoded path, so the same file carried two ids
+/// depending on which one ran first — and a definition path came back escaped,
+/// naming a file that does not exist.
+#[test]
+fn test_uri_to_path_decodes_percent_encoding() {
+    let workspace = TempWorkspace::new("uri path decoding");
+    let uri = workspace.write("my dir/main.chrn", "let x = 1\n");
+
+    let path = crate::analyser::uri_to_path(&uri);
+    assert!(
+        path.is_file(),
+        "the interned path names the real file, got {}",
+        path.display()
+    );
+    assert_eq!(
+        path,
+        uri.to_file_path().expect("the workspace URI is a file path"),
+        "the encoded `Url::path` form is never the interned path"
+    );
+}
+
+/// The main module is named after the path's file *prefix*, the way `extract_main`
+/// names it, so a dotted filename still binds an identifier source can spell.
+///
+/// `file_stem` bound `dotted.name` for `dotted.name.chrn`, which nothing could
+/// reference: the CLI resolved `dotted::x` and the editor reported an unknown
+/// namespace.
+#[tokio::test(start_paused = true)]
+async fn test_session_main_module_binds_the_file_prefix() {
+    let workspace = TempWorkspace::new("dotted_main_module_name");
+    let text = "let x = 1\nlet y = dotted::x\n";
+    let uri = workspace.write("dotted.name.chrn", text);
+
+    let mut session = Session::new().await;
+    let diagnostics = session.open(&uri, text).await;
+
+    assert!(
+        diagnostics.is_empty(),
+        "`dotted` is the module's own namespace, got {diagnostics:?}"
+    );
+}
+
+/// A diagnostic that belongs to an imported file is anchored on the import in *this*
+/// document and labelled with the file it came from.
+///
+/// Its byte spans index the imported file's region, so converting them against this
+/// document's line table put the error at an unrelated position in the wrong file —
+/// here, inside the import path string. A transitively imported module anchors on the
+/// top-level import that brought the chain in.
+#[tokio::test(start_paused = true)]
+async fn test_session_anchors_transitively_imported_diagnostics_on_the_import() {
+    let workspace = TempWorkspace::new("foreign_diag_anchor");
+    let deep_uri = workspace.write("deep.chrn", "let a = 1\nlet b = 2\nlet c = 3\nlet = 3\n");
+    // Import paths canonicalize against the process cwd, so fixtures import by
+    // absolute path (see `create_pathbuf` in `mod_finder`).
+    let mid = format!("import \"{}\"\nlet m = 1\n", deep_uri.path());
+    let mid_uri = workspace.write("mid.chrn", &mid);
+    let text = format!("import \"{}\"\nlet value = 2\n", mid_uri.path());
+    let uri = workspace.write("main.chrn", &text);
+
+    let mut session = Session::new().await;
+    let diagnostics = session.open(&uri, &text).await;
+
+    let foreign = diagnostics
+        .iter()
+        .find(|d| d.source.as_deref() == Some("chrn-parser"))
+        .expect("a parse error in a transitively imported module is reported");
+
+    assert!(
+        foreign.message.starts_with("deep.chrn: "),
+        "the message names the file the error is actually in, got {:?}",
+        foreign.message
+    );
+    // `import "<mid>"` — the path literal starts at character 7 and the whole
+    // statement sits on the first line of the importing document.
+    assert_eq!(
+        foreign.range.start.line, 0,
+        "the anchor is the top-level import, got {:?}",
+        foreign.range
+    );
+    assert!(
+        foreign.range.end.character as usize <= text.lines().next().unwrap().chars().count(),
+        "the anchor stays inside the import statement, got {:?}",
+        foreign.range
+    );
+}
+
+/// The published set is budgeted like the CLI's `Reporter`: diagnostics past the
+/// limit are dropped and the total that were dropped is reported.
+#[test]
+fn test_get_lsp_diagnostics_budgets_the_published_set() {
+    let cache = crate::state::DocumentCache::new(10);
+    let state_arc = cache.get_or_create(
+        "file:///budget.chrn",
+        std::sync::Arc::new("let x = 1\n".to_string()),
+        0,
+        None,
+        1,
+    );
+    let mut state = state_arc.write();
+
+    let overage = 25;
+    for _ in 0..crate::analyser::MAX_DIAGNOSTICS + overage {
+        state.parse_errors.push_diag(
+            SourceDiagnostic::builder(
+                None,
+                DiagnosticLevel::Error,
+                "boom".to_string(),
+                PathId::new(0),
+            )
+            .build(),
+        );
+    }
+
+    let diagnostics = state.get_lsp_diagnostics();
+
+    // Each of these core diagnostics carries no annotation, note or help, so it
+    // converts to exactly one LSP diagnostic; the extra entry is the notice.
+    assert_eq!(
+        diagnostics.len(),
+        crate::analyser::MAX_DIAGNOSTICS + 1,
+        "the set is capped at the budget plus the suppression notice"
+    );
+
+    let notice = diagnostics.last().expect("the notice is appended last");
+    assert_eq!(notice.source.as_deref(), Some("chrn"));
+    assert!(
+        notice.message.contains(&overage.to_string()),
+        "the notice reports how many were suppressed, got {:?}",
+        notice.message
     );
 }

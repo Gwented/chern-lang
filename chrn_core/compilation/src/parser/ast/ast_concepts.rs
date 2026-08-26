@@ -24,21 +24,21 @@ use crate::{
 pub struct AstInfo {
     /// Array that holds all 5 `chrn` sections.
     /// order: `neutral`, `var`, `nest`, `complex`, `override`
-    pub sections: [Option<AbstractSection>; 5],
+    pub sections: [Option<AbstractSection>; 4],
     pub items: Arena<Item, AstId>,
 }
 
 impl AstInfo {
     pub fn new() -> AstInfo {
         AstInfo {
-            sections: [None, None, None, None, None],
+            sections: [None, None, None, None],
             items: Arena::new(),
         }
     }
 
     pub fn with_capacity(items_cap: usize) -> AstInfo {
         AstInfo {
-            sections: [None, None, None, None, None],
+            sections: [None, None, None, None],
             items: Arena::with_capacity(items_cap),
         }
     }
@@ -234,8 +234,7 @@ pub enum SectionKind {
     Neutral = 0,
     Var = 1,
     Nest = 2,
-    Override = 3,
-    Complex = 4,
+    Complex = 3,
 }
 
 impl SectionKind {
@@ -244,7 +243,6 @@ impl SectionKind {
             SectionKind::Neutral => ScopeType::Neutral,
             SectionKind::Var => ScopeType::Var,
             SectionKind::Nest => ScopeType::Nest,
-            SectionKind::Override => ScopeType::Override,
             SectionKind::Complex => ScopeType::Complex,
         }
     }
@@ -256,7 +254,6 @@ impl ChrnClassifiable for SectionKind {
             SectionKind::Neutral => ChrnClassifier::SectNeutral,
             SectionKind::Var => ChrnClassifier::SectVar,
             SectionKind::Nest => ChrnClassifier::SectNest,
-            SectionKind::Override => ChrnClassifier::SectOverride,
             SectionKind::Complex => ChrnClassifier::SectComplex,
         }
     }

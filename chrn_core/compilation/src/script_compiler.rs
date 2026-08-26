@@ -774,12 +774,11 @@ impl ScriptCompiler {
         // Beep
         let intrinsic_scope_opt: Option<ScopeId> = match scope_type {
             // Lazy
-            ScopeType::Override => self.load_override_symbols().into(),
+            ScopeType::Complex => self.load_override_symbols().into(),
             ScopeType::Local
             | ScopeType::Neutral
             | ScopeType::Var
             | ScopeType::Nest
-            | ScopeType::Complex
             | ScopeType::Compiler
             | ScopeType::Core => None,
         };
@@ -911,7 +910,7 @@ impl ScriptCompiler {
     /// If the override instrinsic `ScopeId` already exists then this will just return that scope id.
     fn load_override_symbols(&mut self) -> ScopeId {
         //NOTE: Just in case this is called without knowledge of if the override scope exists.
-        if let Some(inner) = self.intrinsic_registry.override_scope_id {
+        if let Some(inner) = self.intrinsic_registry.complex_scope_id {
             return inner;
         }
 
@@ -922,7 +921,7 @@ impl ScriptCompiler {
         let scope_id = ScopeId::new(self.scopes.len() as u16);
 
         // Override intrisic scope's table which holes stuff like "RUST" and "JAVA" namespaces
-        let scope = Scope::new(scope_id, ScopeType::Override, true, None);
+        let scope = Scope::new(scope_id, ScopeType::Complex, true, None);
         self.scopes.push(ScopeInfo::new(scope, None, core_mod_id));
 
         self.register_all_instantiation_bases(

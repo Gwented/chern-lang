@@ -69,15 +69,15 @@ pub static SCOPE_COMPLEX_ENCODED_SCOPES: [ScopeType; 5] = [
     ScopeType::Core,
 ];
 
-/// Elements ordered to fit the needs of scope `override`
-pub static SCOPE_OVERRIDE_ENCODED_SCOPES: [ScopeType; 6] = [
-    ScopeType::Override,
-    ScopeType::Var,
-    ScopeType::Nest,
-    ScopeType::Neutral,
-    ScopeType::Compiler,
-    ScopeType::Core,
-];
+// /// Elements ordered to fit the needs of scope `override`
+// pub static SCOPE_OVERRIDE_ENCODED_SCOPES: [ScopeType; 6] = [
+//     ScopeType::Override,
+//     ScopeType::Var,
+//     ScopeType::Nest,
+//     ScopeType::Neutral,
+//     ScopeType::Compiler,
+//     ScopeType::Core,
+// ];
 
 //WARN: Suspicious accessibility
 pub static SCOPE_LOCAL_ENCODED_SCOPES: [ScopeType; 1] = [ScopeType::Local];
@@ -164,7 +164,7 @@ pub enum ScopeType {
     Var,
     Nest,
     Complex,
-    Override,
+    // Override,
 }
 
 impl ScopeType {
@@ -178,7 +178,7 @@ impl ScopeType {
             // using in other sections
             ScopeType::Neutral => &SCOPE_NEUTRAL_ENCODED_SCOPES,
             ScopeType::Var => &SCOPE_VAR_ENCODED_SCOPES,
-            ScopeType::Override => &SCOPE_OVERRIDE_ENCODED_SCOPES,
+            // ScopeType::Override => &SCOPE_OVERRIDE_ENCODED_SCOPES,
             ScopeType::Nest => &SCOPE_NEST_ENCODED_SCOPES,
             ScopeType::Complex => &SCOPE_COMPLEX_ENCODED_SCOPES,
             ScopeType::Local => &SCOPE_LOCAL_ENCODED_SCOPES,
@@ -194,7 +194,7 @@ impl ScopeType {
             ScopeType::Var => SCOPE_VAR,
             ScopeType::Nest => SCOPE_NEST,
             ScopeType::Complex => SCOPE_COMPLEX,
-            ScopeType::Override => SCOPE_OVERRIDE,
+            // ScopeType::Override => SCOPE_OVERRIDE,
             ScopeType::Local => SCOPE_LOCAL,
             ScopeType::Compiler => SCOPE_COMPILER,
         }
@@ -202,8 +202,8 @@ impl ScopeType {
 
     pub(crate) fn has_intrinsic_scope(self) -> bool {
         match self {
-            ScopeType::Override => true,
-            ScopeType::Complex |
+            // ScopeType::Override => true,
+            ScopeType::Complex  => true,
             ScopeType::Core
             | ScopeType::Local
             | ScopeType::Neutral
@@ -248,7 +248,6 @@ impl std::fmt::Display for ScopeType {
             ScopeType::Var => write!(f, "var"),
             ScopeType::Nest => write!(f, "nest"),
             ScopeType::Complex => write!(f, "complex"),
-            ScopeType::Override => write!(f, "override"),
             ScopeType::Local => write!(f, "local"),
             ScopeType::Compiler => write!(f, "compiler"),
         }
@@ -276,14 +275,14 @@ impl ChrnClassifiable for AssociatedScopeKind {
 
 pub struct IntrinsicRegistry {
     pub core_mod_id: ModuleId,
-    pub override_scope_id: Option<ScopeId>,
+    pub complex_scope_id: Option<ScopeId>,
 }
 
 impl IntrinsicRegistry {
-    pub fn new(core_mod_id: ModuleId, override_scope_id: Option<ScopeId>) -> IntrinsicRegistry {
+    pub fn new(core_mod_id: ModuleId, complex_scope_id: Option<ScopeId>) -> IntrinsicRegistry {
         IntrinsicRegistry {
             core_mod_id,
-            override_scope_id,
+            complex_scope_id,
         }
     }
 }

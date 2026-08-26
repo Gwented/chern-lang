@@ -78,9 +78,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::analyser;
 
 use chrn_utils::arena::Arena;
+use chrn_utils::budget::mem_budget::{BudgetResult, MemoryBudget};
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::id_types::{
-    AstId, ImplId, ImplMemberId, InternedId, ModuleId, SourceRegionId, SymbolId, TypeId,
+    AstId, ImplId, ImplMemberId, InternedId, ModuleId, PathId, SourceRegionId, SymbolId, TypeId,
 };
 use chrn_utils::utils::containers::SpannedContainer;
 use chrn_utils::intern::Intern;
@@ -273,17 +274,18 @@ impl DocumentState {
 
         let mut all_mods = Vec::with_capacity(sub_mods.len() + 1);
         all_mods.push(main_mod);
-        // Slot index + 1 is the module id, including failed slots: ids were
-        // assigned per seen path during resolution, so `None` gaps must keep
-        // consuming an id to stay aligned with the region arena.
-        for (slot, mod_opt) in sub_mods.into_iter().enumerate() {
-            let next_id = slot as u32 + 1;
-            if let Some(mut inner) = mod_opt {
-                if inner.mod_id.id != next_id {
-                    inner.mod_id.id = next_id;
-                }
-                all_mods.push(inner);
-            }
+        // Resolution reserves a module id only for modules it actually created, so
+        // `sub_mods` is dense and slot index + 1 is already the module id. Appending
+        // in slot order therefore lands every module on the arena index matching its
+        // id, which is what `ScriptCompiler::init` and `create_module_symbols`
+        // assume when they index `mods` positionally and read `module.mod_id`.
+        for (slot, sub_mod) in sub_mods.into_iter().enumerate() {
+            debug_assert_eq!(
+                sub_mod.mod_id.id as usize,
+                slot + 1,
+                "Imported module ids are dense and start at 1"
+            );
+            all_mods.push(sub_mod);
         }
 
         // `ScriptCompiler::init` takes an `Arena<Module, ModuleId>`.  The compiler
@@ -836,17 +838,137 @@ impl DocumentState {
         // them once here replaces one full-document `LineIndex` per stage.
         let script_starts = analyser::region_script_starts(&self.region_arena);
         let lines = crate::text::LineIndex::new(&self.text);
+
+        // Diagnostics belonging to imported files are anchored on the import that
+        // pulls them in rather than converted against this document's text.
+        let origins = self.foreign_origins();
+        let foreign = self
+            .region_arena
+            .get(SourceRegionId::new(0))
+            .map(|main_region| analyser::ForeignContext {
+                main_path_id: main_region.path_id,
+                origins: &origins,
+            });
+
+        // Publishing serialises the whole set, so it is budgeted the way the CLI
+        // budgets its `Reporter`: consume per core diagnostic, truncate the stage
+        // that crosses the limit, and keep counting what was dropped so the total
+        // can be reported.
+        let mut budget = MemoryBudget::new(analyser::MAX_DIAGNOSTICS);
+
         for (summary, source) in stages {
+            let diags = summary.diags();
+            let allowed = match budget.checked_consume(diags.len()) {
+                BudgetResult::Stable | BudgetResult::LimitReached => diags,
+                BudgetResult::Overage(_) => {
+                    // `checked_consume` leaves usage untouched on an overage, so the
+                    // remaining room is still readable here; the budget is then
+                    // closed out manually, exactly as `Reporter::merge_summary_safe`
+                    // does.
+                    let remaining = budget.remaining();
+                    budget.set_to_limit();
+                    &diags[..remaining]
+                }
+                BudgetResult::Overflow => &diags[..0],
+            };
+
             analyser::push_diagnostic_inner(
                 &mut lsp_diags,
-                summary.diags(),
+                allowed,
                 &script_starts,
                 &lines,
                 doc_len,
                 source,
+                foreign.as_ref(),
             );
         }
+
+        let suppressed = budget.amt_exceeded();
+        if suppressed > 0 {
+            lsp_diags.push(tower_lsp::lsp_types::Diagnostic {
+                range: tower_lsp::lsp_types::Range::default(),
+                severity: Some(tower_lsp::lsp_types::DiagnosticSeverity::INFORMATION),
+                source: Some("chrn".to_string()),
+                message: format!(
+                    "{suppressed} more diagnostics were suppressed (limit {})",
+                    analyser::MAX_DIAGNOSTICS
+                ),
+                ..Default::default()
+            });
+        }
+
         lsp_diags
+    }
+
+    /// For every file reachable through this document's imports, where a diagnostic
+    /// belonging to it is anchored and what it is called.
+    ///
+    /// The anchor is the span of *this document's* import that leads to the file, so
+    /// a diagnostic from a transitively imported module points at the top-level
+    /// import that brought the chain in. Returns an empty map before analysis has
+    /// run, which leaves every diagnostic on the ordinary conversion path.
+    fn foreign_origins(&self) -> HashMap<PathId, analyser::ForeignOrigin> {
+        let mut origins = HashMap::new();
+        let Some(compiler) = &self.compiler else {
+            return origins;
+        };
+
+        let main_id = ModuleId::new(0);
+        let Some(main_mod) = compiler.mods.get(main_id) else {
+            return origins;
+        };
+
+        // Each of the main module's own imports seeds the walk with its own span;
+        // everything reached from there inherits it.
+        let mut queue: VecDeque<(ModuleId, SourceSpan)> = VecDeque::new();
+        for import in &main_mod.imports {
+            if let ImportKind::Source(sp_path_id, mod_id) = &import.kind {
+                queue.push_back((*mod_id, sp_path_id.span));
+            }
+        }
+
+        // The main module is pre-marked: a self-import must not make this document
+        // foreign to itself, and an import cycle must terminate.
+        let mut seen: HashSet<u32> = HashSet::new();
+        seen.insert(main_id.id);
+
+        while let Some((mod_id, anchor)) = queue.pop_front() {
+            if !seen.insert(mod_id.id) {
+                continue;
+            }
+
+            let Some(module) = compiler.mods.get(mod_id) else {
+                continue;
+            };
+
+            if let Some(region_id) = module.region_id
+                && let Some(region) = self.region_arena.get(region_id)
+            {
+                let label = self
+                    .interner
+                    .search_path(region.path_id)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("imported module")
+                    .to_string();
+
+                origins.insert(
+                    region.path_id,
+                    analyser::ForeignOrigin {
+                        anchor: Some(anchor),
+                        label,
+                    },
+                );
+            }
+
+            for import in &module.imports {
+                if let ImportKind::Source(_, child_id) = &import.kind {
+                    queue.push_back((*child_id, anchor));
+                }
+            }
+        }
+
+        origins
     }
 
     /// Returns the interned ID, start byte, and end byte of the identifier token

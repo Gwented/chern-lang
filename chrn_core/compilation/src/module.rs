@@ -491,6 +491,14 @@ pub fn extract_modules(
 }
 
 /// Takes an import and attempts to turn it into a module
+/// import: The import being turned into a module
+/// official_ident: The identifier of the import that's being resolved into a module. This is passed
+/// in because the identifier of an import must be either the generated file name, or given alias,
+/// not both.
+/// graph: State management system for processing modules.
+///
+/// `interner` is mutable because this function needs to collect the imports of the created module,
+/// which means new `PathId`s need to be interned.
 fn resolve_module(
     // The import to turn into a module
     import: Import,

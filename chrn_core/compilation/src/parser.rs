@@ -27,9 +27,7 @@ use crate::parser::context::ParserContext;
 use crate::parser::evidence::{Evidence, InitialEvidence, SemanticEnv, SemanticSituation};
 use crate::parser::parser_budget::ParserBudget;
 use crate::parser::parser_state::ParserState;
-use crate::semantic::hir::hir_impls::{
-    ComplexConfigMemberMetadata, ConfigMemberMetadataKind, OverrideConfigMemberMetadata,
-};
+use crate::semantic::hir::hir_impls::{ComplexConfigMemberMetadata, ConfigMemberMetadataKind};
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::chrn_config::chrn_perf::ChrnPerfStage;
 use chrn_utils::intern::Intern;
@@ -92,6 +90,7 @@ pub fn parse(
 
                     ctx.advance_tok();
 
+                    // Report duplicate for if let some bind span
                     if state.has_bind() {
                         ctx.report_verbose(
                             "Duplicate bind statement",
@@ -319,71 +318,29 @@ pub fn parse(
                             break;
                         }
 
+                        // One-time override of what lookup pattern should be assigned to the root
+                        // config expr. This exists to avoid making an entirely different entry
+                        // point function, with the same logic as the config members just because
+                        // the pattern may be overidden once.
+                        let lookup_pat_opt = match ctx.peek_tok() {
+                            // For type impl
+                            Token::Keyword(Keyword::For) => {
+                                ctx.advance_tok();
+                                None
+                                // handle it here?
+                            }
+                            Token::Keyword(Keyword::Override) => {
+                                ctx.advance_tok();
+                                Some(ScopeLookupPattern::OnlyIntrinsic)
+                            }
+                            _ => None,
+                        };
+
                         if let Ok(abs_cfg) =
-                            parse_cfg_expr(&mut ctx, &budget, true, ScopeType::Complex, interner)
+                            parse_cfg_expr(&mut ctx, &budget, lookup_pat_opt, true, interner)
                         {
                             let item = Item::Impl(AbstractImpl::Config(abs_cfg));
                             ast_info.push_item(SectionKind::Complex, item);
-                        }
-                    }
-                }
-                Keyword::Override => {
-                    if !is_priv {
-                        report_export(
-                            &mut ctx,
-                            ChrnClassifier::SectComplex,
-                            Branch::Section(SectionBranch::Searching),
-                            interner,
-                        );
-                    }
-
-                    ctx.advance_tok();
-
-                    if state.has_override() {
-                        ctx.report_verbose(
-                            "Duplicate `override` section",
-                            InitialEvidence::new(
-                                SemanticEnv::SearchingSection,
-                                SemanticSituation::UnexpectedToken,
-                                Branch::Section(SectionBranch::Searching),
-                            ),
-                            interner,
-                        );
-                        continue;
-                    } else {
-                        state.flip_override();
-                        ast_info.push_sect(SectionKind::Override);
-                    }
-
-                    _ = ctx.expect_verbose(
-                        TokenKind::SlimArrow,
-                        "Expected '->' after section `override`, found ",
-                        "",
-                        InitialEvidence::new(
-                            SemanticEnv::SearchingSection,
-                            SemanticSituation::UnexpectedToken,
-                            Branch::Section(SectionBranch::Searching),
-                        ),
-                        interner,
-                    );
-                    // Please lint empty sections please emit 40000 warns for slightly misplaced
-                    // spaces
-                    // As you wish.
-
-                    while !ctx.peek_kind().is_terminator() {
-                        // This would look simpler with keywords
-                        if let Token::Keyword(kw) = ctx.peek_tok()
-                            && kw.is_sect()
-                            && ctx.peek_ahead(1).tok == Token::SlimArrow
-                        {
-                            break;
-                        }
-
-                        if let Ok(abs_cfg) =
-                            parse_cfg_expr(&mut ctx, &budget, true, ScopeType::Override, interner)
-                        {
-                            let item = Item::Impl(AbstractImpl::Config(abs_cfg));
-                            ast_info.push_item(SectionKind::Override, item);
                         }
                     }
                 }
@@ -801,9 +758,9 @@ fn parse_nest_sect(
 fn parse_cfg_expr(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
+    mut lookup_pat_opt: Option<ScopeLookupPattern>,
     // It's only one depth so just reflecting it with one T/F state
     is_root: bool,
-    scope_type: ScopeType,
     interner: &Intern,
 ) -> Result<AbstractConfig, Token> {
     let _guard = budget.increase_depth().map_err(|_| {
@@ -825,7 +782,8 @@ fn parse_cfg_expr(
         Token::Poison
     })?;
 
-    let (lookup_pat, kind) = handle_cfg_metadata(ctx, budget, is_root, scope_type, interner)?;
+    let (lookup_pat, kind) = handle_cfg_metadata(ctx, budget, lookup_pat_opt, is_root, interner)?;
+    lookup_pat_opt = None;
 
     // Allows for "=>" to notify that
     if ctx.peek_tok() != Token::OCurlyBracket && ctx.peek_tok() != Token::NotSlimArrow {
@@ -877,7 +835,7 @@ fn parse_cfg_expr(
     //WARN: This is getting suspicious..
     // Looking really bad..
     loop {
-        if scope_type == ScopeType::Override && ctx.peek_tok() == Token::Keyword(Keyword::Change) {
+        if ctx.peek_tok() == Token::Keyword(Keyword::Change) {
             ctx.advance_tok();
             let multi_assign = parse_change(ctx, budget, interner)?;
             stmts.push(AbstractStmt::MultiAssignType(multi_assign));
@@ -897,7 +855,7 @@ fn parse_cfg_expr(
             || ctx.peek_tok() == Token::Keyword(Keyword::Override)
         {
             // for "inner {/*assignments*/}"
-            match parse_cfg_expr(ctx, budget, false, scope_type, interner) {
+            match parse_cfg_expr(ctx, budget, None, false, interner) {
                 Ok(abs_cfg) => cfg_members.push(abs_cfg),
                 Err(_) => break,
             };
@@ -996,105 +954,63 @@ fn parse_ambiguous_expr(
 fn handle_cfg_metadata(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
+    lookup_pat_opt: Option<ScopeLookupPattern>,
     is_root: bool,
-    scope_type: ScopeType,
     interner: &Intern,
 ) -> Result<(ScopeLookupPattern, AbstractConfigKind), Token> {
     //TODO: Collapse these
-    match scope_type {
-        ScopeType::Complex => {
-            if is_root {
-                // Only keywords valid for root usage
-                let pat = if ctx.peek_tok() == Token::Keyword(Keyword::Var) {
-                    ctx.advance_tok();
-                    ScopeLookupPattern::OnlyVar
-                } else if ctx.peek_tok() == Token::Keyword(Keyword::Nest) {
-                    ctx.advance_tok();
-                    ScopeLookupPattern::OnlyNest
-                } else {
-                    ScopeLookupPattern::NamespaceOnly
-                };
-
-                // TEST: Generically parsing as a segment so that semantically the resolver can
-                // decide to resolve as ty or expr
-                let ty_expr = parse_ambiguous_expr(ctx, budget, interner)?;
-
-                return Ok((pat, AbstractConfigKind::Root(ty_expr)));
+    if is_root {
+        // If we were explicitly given an override then @*)*$)%)#(0000) it takes priority.
+        let pat = if let Some(p) = lookup_pat_opt {
+            p
+        } else {
+            // Only keywords valid for root usage
+            if ctx.peek_tok() == Token::Keyword(Keyword::Var) {
+                ctx.advance_tok();
+                ScopeLookupPattern::OnlyVar
+            } else if ctx.peek_tok() == Token::Keyword(Keyword::Nest) {
+                ctx.advance_tok();
+                ScopeLookupPattern::OnlyNest
             } else {
-                // If !root
-                let name_span = ctx.peek_span();
-                let name_id = ctx.expect_id_verbose(
-                    TokenKind::Id,
-                    "Expected identifier to define config, found ",
-                    "",
-                    InitialEvidence::new(
-                        SemanticEnv::Config,
-                        SemanticSituation::IdentBinding,
-                        //TODO: Tag
-                        SectionBranch::Complex.into(),
-                    ),
-                    interner,
-                )?;
-
-                let sp_interned_id = SpannedContainer::new(name_id, name_span);
-                let kind = AbstractConfigKind::Member(
-                    sp_interned_id,
-                    ConfigMemberMetadataKind::Complex(ComplexConfigMemberMetadata::new()),
-                );
-
-                return Ok((ScopeLookupPattern::NamespaceOnly, kind));
+                ScopeLookupPattern::NamespaceOnly
             }
-        }
-        ScopeType::Override => {
-            //TODO: Root stuff
-            if is_root {
-                // Only keywords valid for root usage
-                let pat = if ctx.peek_tok() == Token::Keyword(Keyword::Var) {
-                    ctx.advance_tok();
-                    ScopeLookupPattern::OnlyVar
-                } else if ctx.peek_tok() == Token::Keyword(Keyword::Nest) {
-                    ctx.advance_tok();
-                    ScopeLookupPattern::OnlyNest
-                } else {
-                    ScopeLookupPattern::NamespaceOnly
-                };
+        };
 
-                // Ambig. Ok. I see.
-                let ambig_expr = parse_ambiguous_expr(ctx, budget, interner)?;
+        // TEST: Generically parsing as a segment so that semantically the resolver can
+        // decide to resolve as ty or expr
+        let ambig_expr = parse_ambiguous_expr(ctx, budget, interner)?;
 
-                return Ok((pat, AbstractConfigKind::Root(ambig_expr)));
-            } else {
-                let lookup_pat = if ctx.peek_tok() == Token::Keyword(Keyword::Override) {
-                    ScopeLookupPattern::OnlyIntrinsic
-                } else {
-                    ScopeLookupPattern::NamespaceOnly
-                };
+        return Ok((pat, AbstractConfigKind::Root(ambig_expr)));
+    } else {
+        let pat = if ctx.peek_tok() == Token::Keyword(Keyword::Override) {
+            ctx.advance_tok();
+            ScopeLookupPattern::OnlyIntrinsic
+        } else {
+            ScopeLookupPattern::NoRestrictions
+        };
 
-                // If !root
-                let name_span = ctx.peek_span();
-                let name_id = ctx.expect_id_verbose(
-                    TokenKind::Id,
-                    "Expected identifier to define config, found ",
-                    "",
-                    InitialEvidence::new(
-                        SemanticEnv::Config,
-                        SemanticSituation::IdentBinding,
-                        //TODO: Tag
-                        Branch::Section(SectionBranch::Override),
-                    ),
-                    interner,
-                )?;
+        // If !root
+        let name_span = ctx.peek_span();
+        let name_id = ctx.expect_id_verbose(
+            TokenKind::Id,
+            "Expected identifier to define config, found ",
+            "",
+            InitialEvidence::new(
+                SemanticEnv::Config,
+                SemanticSituation::IdentBinding,
+                //TODO: Tag
+                SectionBranch::Complex.into(),
+            ),
+            interner,
+        )?;
 
-                let sp_interned_id = SpannedContainer::new(name_id, name_span);
-                let kind = AbstractConfigKind::Member(
-                    sp_interned_id,
-                    ConfigMemberMetadataKind::Override(OverrideConfigMemberMetadata::new()),
-                );
+        let sp_interned_id = SpannedContainer::new(name_id, name_span);
+        let kind = AbstractConfigKind::Member(
+            sp_interned_id,
+            ConfigMemberMetadataKind::Complex(ComplexConfigMemberMetadata::new()),
+        );
 
-                return Ok((lookup_pat, kind));
-            }
-        }
-        _ => unreachable!(),
+        return Ok((pat, kind));
     }
 }
 

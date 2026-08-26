@@ -1,10 +1,10 @@
 export let READ = 0b0
 export let WRITE = 0b1
 
-// import "../chrn_core/chrn_tests/nothing.chrn"
+// import "../chrn_core/chrn_tests/nothing"
 import "../chrn_core/chrn_tests/other.chrn"
-import "../chrn_core/chrn_tests/def.chrn"
-import "../chrn_core/chrn_tests/examples/def.chrn" as warn
+// import "../chrn_core/chrn_tests/def.chrn"
+// import "../chrn_core/chrn_tests/examples/def.chrn" as warn
 // import "../chrn_core/chrn_tests/core.chrn"
 // Maybe this shouldn't be seen as a valid import
 // import l
@@ -44,6 +44,33 @@ nest->
         stating: i32
         InProgress
     }
+// What if complex was fused with override?
+// PROPS TEST START
+complex->
+
+for State {
+    idents = 3
+    override types {
+        C {
+            // Ok
+            change i32, u32, = c::int32_t
+        }
+    }
+    opts = 3
+
+    state1 {
+        override types {
+            C {
+
+            }
+        }
+    }
+}
+
+override PYTHON {}
+@end
+// PROPS TEST END
+
 /*complex->
 State {
     stating {
@@ -61,6 +88,10 @@ State {
    // nothing::Person {}
 override->
 State {
+    // Behavior where override needs to be applied if inside of a type override, but 
+    override types {
+        
+    }
     state1 {}
 }
 

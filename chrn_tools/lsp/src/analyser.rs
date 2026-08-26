@@ -70,6 +70,15 @@ use crate::state::DocumentState;
 
 const MAX_DIAGS_CACHE_SIZE: usize = 100;
 
+/// Most core diagnostics converted for a single publish.
+///
+/// The CLI budgets its `Reporter` at 80 (`chrn::MAX_DIAGNOSTICS`) because it dumps
+/// every diagnostic into a terminal. An editor renders them into a scrollable panel
+/// and jumps between them, so the ceiling here is higher — but there still has to be
+/// one: a publish serialises the whole set, and an unbounded list is both a memory
+/// and a notification-size problem on a pathological file.
+pub(crate) const MAX_DIAGNOSTICS: usize = 500;
+
 /// Evicts entries from the diagnostics cache if it has reached [`MAX_DIAGS_CACHE_SIZE`].
 ///
 /// When the cache is full, ten extra entries are removed so the eviction does not
@@ -240,13 +249,28 @@ pub(crate) struct ModuleResolution {
     /// Main module descriptor.
     pub main_mod: Module,
     /// Imported module descriptors; indexed by `ModuleId::id - 1`.
-    pub sub_mods: Vec<Option<Module>>,
+    pub sub_mods: Vec<Module>,
     /// Imported module regions; ids are `1..=sub_mods.len()`.
     pub sub_regions: Vec<SourceRegion>,
     /// Config/import diagnostics collected during resolution.
     pub config_errors: SourceDiagnosticSummary,
     /// URI strings of every imported module, for dependency registration.
     pub imported_uris: Vec<String>,
+}
+
+/// The filesystem path a document URI names.
+///
+/// [`Url::path`] stays percent-encoded, so it is not the path to intern: a document
+/// under `/my dir/a.chrn` comes back as `/my%20dir/a.chrn`. Every entry point that
+/// interns a document path must go through here, or the same file is interned twice
+/// under two different [`PathId`]s and region lookup, definition paths and self-import
+/// detection all split depending on which entry point analyzed the document.
+///
+/// The encoded form is the fallback for a URI that names no file at all (a
+/// non-`file:` scheme), which keeps a path id available for diagnostics.
+pub(crate) fn uri_to_path(uri: &Url) -> PathBuf {
+    uri.to_file_path()
+        .unwrap_or_else(|_| PathBuf::from(uri.path()))
 }
 
 /// A document whose lexical data and imported modules have been resolved, but whose
@@ -285,9 +309,7 @@ pub(crate) fn resolve_document_modules(
     version: u64,
     mut interner: Intern,
 ) -> PreparedDocument {
-    let path_buf = uri
-        .to_file_path()
-        .unwrap_or_else(|_| PathBuf::from(uri.path()));
+    let path_buf = uri_to_path(uri);
     let path_id = interner.intern_path(&path_buf);
 
     // The lexer is given the *relative* `src_bytes` (the script section only) and
@@ -306,8 +328,12 @@ pub(crate) fn resolve_document_modules(
     let tokens = lex_output.toks;
     let trivia = lex_output.trivia;
 
+    // `file_prefix`, not `file_stem`: `extract_main` names the main module after the
+    // prefix, so `my.config.chrn` binds `my` in the compiler. `file_stem` would bind
+    // `my.config` here — an identifier no source line can spell, which made every
+    // `my::X` unresolvable in the editor and fine on the CLI.
     let name = path_buf
-        .file_stem()
+        .file_prefix()
         .and_then(|s| s.to_str())
         .unwrap_or("<unnamed>")
         .to_string();
@@ -362,8 +388,7 @@ pub(crate) fn resolve_document_modules(
 
     let imported_uris: Vec<String> = sub_mods
         .iter()
-        .filter_map(|mod_opt| {
-            let m = mod_opt.as_ref()?;
+        .filter_map(|m| {
             let region_id = m.region_id?;
             let region = sub_regions.get(region_id.id as usize - 1)?;
             let p = interner.search_path(region.path_id);
@@ -434,9 +459,7 @@ pub async fn analyze_and_publish_task(
 ) {
     let mut chrn_cfg = ChrnConfig::default();
 
-    let path_buf = uri
-        .to_file_path()
-        .unwrap_or_else(|_| PathBuf::from(uri.path()));
+    let path_buf = uri_to_path(&uri);
 
     // 1. Initial config load to find boundaries.
     //
@@ -714,7 +737,83 @@ pub(crate) fn push_diagnostic(
         &lines,
         fallback_doc_len,
         source,
+        None,
     );
+}
+
+/// Where a diagnostic that belongs to another file is shown, and how it is labelled.
+///
+/// Diagnostics carry spans into their *own* region, so an imported module's spans are
+/// meaningless against the document being published. Rather than convert them anyway,
+/// the diagnostic is anchored on the import in this document that pulls that module
+/// in, and its message names the file it actually came from.
+pub(crate) struct ForeignOrigin {
+    /// Span, relative to this document's region, of the import that (possibly
+    /// transitively) pulls the owning module in. `None` anchors at the file start.
+    pub anchor: Option<SourceSpan>,
+    /// File name the diagnostic actually belongs to, prefixed onto the message.
+    pub label: String,
+}
+
+/// The main document's identity plus every foreign file it can attribute a diagnostic to.
+///
+/// A `path_id` absent from `origins` is not foreign — it is a compiler-intrinsic
+/// diagnostic with no region of its own, which keeps the existing fallback.
+pub(crate) struct ForeignContext<'a> {
+    pub main_path_id: PathId,
+    pub origins: &'a HashMap<PathId, ForeignOrigin>,
+}
+
+/// Converts one diagnostic that belongs to another file into a single LSP diagnostic
+/// anchored in the document being published.
+///
+/// Annotations are dropped: they point into the other file, so re-anchoring each of
+/// them here would stack duplicates on the import. Notes and help are folded into the
+/// message instead, where they stay readable without a position of their own.
+fn push_foreign_diagnostic(
+    lsp_diags: &mut Vec<tower_lsp::lsp_types::Diagnostic>,
+    core_diag: &SourceDiagnostic,
+    origin: &ForeignOrigin,
+    main_script_start: usize,
+    lines: &crate::text::LineIndex,
+    doc_len: usize,
+    source: &str,
+) {
+    let (start_byte, end_byte) = match origin.anchor {
+        Some(span) => (
+            (crate::text::rel_to_abs_offset(span.start, main_script_start) as usize).min(doc_len),
+            (crate::text::rel_to_abs_offset(span.end, main_script_start) as usize).min(doc_len),
+        ),
+        None => (0, 0),
+    };
+
+    let mut message = format!("{}: {}", origin.label, core_diag.core_msg);
+    for note in &core_diag.notes {
+        message.push_str("\nnote: ");
+        message.push_str(note);
+    }
+    for help_msg in &core_diag.help {
+        message.push_str("\nhelp: ");
+        message.push_str(help_msg);
+    }
+
+    let severity = match core_diag.level {
+        DiagnosticLevel::Error => lsp_types::DiagnosticSeverity::ERROR,
+        DiagnosticLevel::Warn => lsp_types::DiagnosticSeverity::WARNING,
+        DiagnosticLevel::Note => lsp_types::DiagnosticSeverity::INFORMATION,
+        DiagnosticLevel::Help => lsp_types::DiagnosticSeverity::HINT,
+    };
+
+    lsp_diags.push(tower_lsp::lsp_types::Diagnostic {
+        range: lsp_types::Range {
+            start: lines.position(start_byte),
+            end: lines.position(end_byte),
+        },
+        severity: Some(severity),
+        source: Some(source.to_string()),
+        message,
+        ..Default::default()
+    });
 }
 
 /// Stage-shared core of [`push_diagnostic`].
@@ -730,8 +829,31 @@ pub(crate) fn push_diagnostic_inner(
     lines: &crate::text::LineIndex,
     doc_len: usize,
     source: &str,
+    foreign: Option<&ForeignContext>,
 ) {
     for core_diag in diags {
+        // A diagnostic that belongs to another file cannot be converted here: `lines`
+        // and `doc_len` describe the document being published, so its byte offsets
+        // would land at an unrelated position in the wrong file. Shifting by the
+        // owning region's `script_start` alone does not fix that. Anchor it on the
+        // import instead.
+        if let Some(ctx) = foreign
+            && core_diag.path_id != ctx.main_path_id
+            && let Some(origin) = ctx.origins.get(&core_diag.path_id)
+        {
+            let main_script_start = script_starts.get(&ctx.main_path_id).copied().unwrap_or(0);
+            push_foreign_diagnostic(
+                lsp_diags,
+                core_diag,
+                origin,
+                main_script_start,
+                lines,
+                doc_len,
+                source,
+            );
+            continue;
+        }
+
         // A diagnostic originating in an imported module has spans relative to
         // that module's region, so the shift has to come from the region matching
         // this diagnostic's `path_id`, not from the main document's.
@@ -861,8 +983,8 @@ pub(crate) fn push_diagnostic_inner(
 /// * `reserved_mod_ids` — Global registry mapping file paths to pre-assigned module
 ///   IDs.  Updated as new imports are discovered during traversal.
 /// * `seen`             — Guard set of already-visited path IDs to break import cycles.
-/// * `modules`          — Output slot array indexed by `ModuleId - 1`; entries are
-///   `None` until a module is successfully loaded.
+/// * `modules`          — Output array indexed by `ModuleId - 1`. A module id is
+///   reserved only once the module exists, so this stays dense.
 /// * `sub_regions`      — Output vector of imported module source regions.  Region
 ///   ids are `1 + index` because id `0` is reserved for the main document region.
 /// * `main_mod`         — The main module whose imports start the traversal.
@@ -883,7 +1005,7 @@ pub(crate) fn push_diagnostic_inner(
 pub(crate) fn resolve_modules_lsp(
     reserved_mod_ids: &mut Vec<(PathId, ModuleId)>,
     seen: &mut Vec<PathId>,
-    modules: &mut Vec<Option<Module>>,
+    modules: &mut Vec<Module>,
     sub_regions: &mut Vec<SourceRegion>,
     main_mod: &mut Module,
     settings: &ChrnConfig,
@@ -1002,10 +1124,12 @@ pub(crate) fn resolve_modules_lsp(
                 break 'worklist;
             }
 
+            // A path is marked seen before it is loaded so a failed import is not
+            // retried by a later importer; it is registered in `reserved_mod_ids`
+            // only once its module exists (see below), so the two intentionally
+            // disagree for failed imports — the `seen` branch above turns those
+            // into `ErrorSource`. This mirrors `extract_modules`/`resolve_module`.
             seen.push(path_id);
-
-            let current_mod_id = ModuleId::new(reserved_mod_ids.len() as u32);
-            reserved_mod_ids.push((path_id, current_mod_id));
 
             let path_owned = interner.search_path(path_id).to_path_buf();
             let path = path_owned.as_path();
@@ -1199,6 +1323,17 @@ pub(crate) fn resolve_modules_lsp(
                     }
                 };
 
+            // The module is now certain to exist, so it takes the next id. Reserving
+            // earlier — before the open, the `core` rejection, the file-prefix check
+            // or the config load — let a failed import consume an id it never used,
+            // which left a hole in `modules` and pushed every later module's id past
+            // its arena slot. `ScriptCompiler::init` derives the synthesized core
+            // module's id from `mods.len()`, so a shifted id collides with core and
+            // the import resolves into core's namespace instead of the file's.
+            // `resolve_module` registers at this same point for the same reason.
+            let current_mod_id = ModuleId::new(reserved_mod_ids.len() as u32);
+            reserved_mod_ids.push((path_id, current_mod_id));
+
             let (bind, sub_imports, mut finder_summary) = ModuleFinder::new(
                 &sub_region.src_bytes,
                 settings,
@@ -1214,12 +1349,6 @@ pub(crate) fn resolve_modules_lsp(
             // extract_modules behaviour exactly: imports are only set to Source
             // when the target module is successfully created).
             importer_mod.imports[i].kind = ImportKind::Source(sp_path_id.clone(), current_mod_id);
-
-            let expected_len = reserved_mod_ids.len() - 1;
-
-            if modules.len() < expected_len {
-                modules.resize(expected_len, None);
-            }
 
             sub_regions.push(sub_region);
             debug_assert_eq!(
@@ -1241,8 +1370,13 @@ pub(crate) fn resolve_modules_lsp(
             // processed in a future iteration (breadth-first / queue order).
             worklist.push_back((sub_mod.clone(), path_id));
 
-            // Store the module in the output slot array.
-            modules[(current_mod_id.id - 1) as usize] = Some(sub_mod);
+            // Ids are dense, so appending puts the module at `mod_id - 1`.
+            debug_assert_eq!(
+                modules.len() + 1,
+                current_mod_id.id as usize,
+                "Module ids are dense: a module's slot index is its id minus one"
+            );
+            modules.push(sub_mod);
         }
 
         // Duplicate-identifier diagnostics are emitted only after every import of
@@ -1292,13 +1426,13 @@ pub(crate) fn resolve_modules_lsp(
         // the module the caller actually keeps: leaving them as `UnresolvedSource`
         // makes `ScriptCompiler::create_module_symbols` hit its `unreachable!()`.
         //
-        // Re-deriving the kinds from `reserved_mod_ids` instead would not do: a path
-        // is reserved before it is loaded, so an import that failed to load is
-        // registered there yet must stay `ErrorSource`.
+        // Re-deriving the kinds from `reserved_mod_ids` instead would not do: it
+        // records nothing about the imports that failed to load, which must stay
+        // `ErrorSource`.
         let resolved_imports = importer_mod.imports;
         if importer_mod.mod_id.id == 0 {
             main_mod.imports = resolved_imports;
-        } else if let Some(Some(stored)) = modules.get_mut((importer_mod.mod_id.id - 1) as usize) {
+        } else if let Some(stored) = modules.get_mut((importer_mod.mod_id.id - 1) as usize) {
             stored.imports = resolved_imports;
         }
     }
@@ -1314,7 +1448,7 @@ pub(crate) fn resolve_modules_lsp(
                 imp.kind = ImportKind::ErrorSource(sp_path_id.clone());
             }
         }
-        for stored in modules.iter_mut().flatten() {
+        for stored in modules.iter_mut() {
             for imp in stored.imports.iter_mut() {
                 if let ImportKind::UnresolvedSource(sp_path_id) = &imp.kind {
                     imp.kind = ImportKind::ErrorSource(sp_path_id.clone());

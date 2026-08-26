@@ -12,9 +12,9 @@ pub const END_CLAUSE_STR: &str = "@end";
 
 // To add a keyword, it must be added as a Keyword enum. The interner must intern it's identifier.
 /// All keywords for `chrn`
-pub static KEYWORDS_ARRAY: [&str; 14] = [
+pub static KEYWORDS_ARRAY: [&str; 15] = [
     "struct", "enum", "import", "export", "bind", "alias", "let", "change", "as", "in", "var",
-    "nest", "complex", "override",
+    "nest", "complex", "override", "for",
 ];
 
 // Keep a compact enum for code that prefers typed keyword identifiers.
@@ -35,6 +35,7 @@ pub enum Keyword {
     Complex = 11,
     Override = 12,
     In = 13,
+    For = 14,
 }
 
 impl ChrnClassifiable for Keyword {
@@ -51,9 +52,10 @@ impl ChrnClassifiable for Keyword {
             Keyword::Var => ChrnClassifier::SectVar,
             Keyword::Nest => ChrnClassifier::SectNest,
             Keyword::Complex => ChrnClassifier::SectComplex,
-            Keyword::Override => ChrnClassifier::SectOverride,
+            Keyword::Override => ChrnClassifier::Override,
             Keyword::As => ChrnClassifier::As,
             Keyword::In => ChrnClassifier::In,
+            Keyword::For => ChrnClassifier::For,
         }
     }
 }
@@ -75,13 +77,14 @@ impl Keyword {
             Keyword::Complex => intern::INTERNED_COMPLEX,
             Keyword::Override => intern::INTERNED_OVERRIDE,
             Keyword::In => intern::INTERNED_IN,
+            Keyword::For => intern::INTERNED_FOR,
         };
         InternedId::new(id)
     }
 
     pub fn is_sect(self) -> bool {
         match self {
-            Keyword::Var | Keyword::Nest | Keyword::Complex | Keyword::Override => true,
+            Keyword::Var | Keyword::Nest | Keyword::Complex => true,
             _ => false,
         }
     }
@@ -105,6 +108,7 @@ impl Keyword {
             intern::INTERNED_COMPLEX => Some(Keyword::Complex),
             intern::INTERNED_OVERRIDE => Some(Keyword::Override),
             intern::INTERNED_IN => Some(Keyword::In),
+            intern::INTERNED_FOR => Some(Keyword::For),
             _ => None,
         }
     }
@@ -123,6 +127,7 @@ impl Keyword {
 const STMT_START: u32 = 3;
 const STMT_END: u32 = 9;
 
+//TODO:
 pub const SECT_START: u32 = 9;
 pub const SECT_END: u32 = 12;
 

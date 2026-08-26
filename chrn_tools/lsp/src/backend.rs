@@ -74,7 +74,6 @@ use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
 use lang::types::builtins::BuiltinTypeKind as ChBuiltinTypeKind;
 use std::io::Cursor;
-use std::path::PathBuf;
 
 /// Publishes config-load diagnostics without awaiting, used in synchronous helpers
 /// that cannot be `async`.
@@ -199,7 +198,11 @@ impl Backend {
             }
         }
 
-        let path_buf = PathBuf::from(uri.path());
+        // Shared with `resolve_document_modules` so both entry points intern the
+        // same string: `Url::path` stays percent-encoded, and interning that form
+        // here gave the same file two `PathId`s depending on which entry point
+        // analyzed it.
+        let path_buf = crate::analyser::uri_to_path(uri);
         let mut chrn_cfg = ChrnConfig::default();
 
         let mut interner = Intern::init();

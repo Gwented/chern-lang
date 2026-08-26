@@ -1193,26 +1193,6 @@ fn parse_type_expr_path_in_alias_param() {
 }
 
 // =============================================================================
-// Override section
-// =============================================================================
-
-#[test]
-fn parse_override_config() {
-    let text = "override->\n    MyCfg { opt = [1] }";
-    let (ast, interner) = parse_text(text);
-
-    let sect = ast.sections[SectionKind::Override as usize]
-        .as_ref()
-        .expect("expected an override section");
-    assert_eq!(sect.nodes.len(), 1);
-
-    let cfg = ast.get_cfg_root(sect.nodes[0]);
-    assert_eq!(interner.search(cfg_name_id(cfg)), "MyCfg");
-    assert!(matches!(cfg.kind, AbstractConfigKind::Root(_)));
-    assert_eq!(cfg.abs_stmts.len(), 1);
-}
-
-// =============================================================================
 // Error / diagnostic tests
 // =============================================================================
 
@@ -1321,9 +1301,6 @@ fn parse_full_script_with_all_sections() {
 
         complex->
             App { title = ["Hello"] }
-
-        override->
-            App { title = ["Overridden"] }
     "#;
 
     let (ast, interner) = parse_text(text);
@@ -1351,12 +1328,6 @@ fn parse_full_script_with_all_sections() {
         .as_ref()
         .expect("expected complex section");
     assert_eq!(complex_sect.nodes.len(), 1); // App
-
-    // Override section
-    let override_sect = ast.sections[SectionKind::Override as usize]
-        .as_ref()
-        .expect("expected override section");
-    assert_eq!(override_sect.nodes.len(), 1); // App
 
     // Verify the let variable
     let var_item = ast.get_var(neutral.nodes[0]);
@@ -1386,9 +1357,6 @@ fn parse_full_script_with_all_sections() {
     // Verify configs
     let app_cfg = ast.get_cfg_root(complex_sect.nodes[0]);
     assert_eq!(interner.search(cfg_name_id(app_cfg)), "App");
-
-    let app_override = ast.get_cfg_root(override_sect.nodes[0]);
-    assert_eq!(interner.search(cfg_name_id(app_override)), "App");
 }
 
 // =============================================================================

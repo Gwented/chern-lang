@@ -244,7 +244,6 @@ pub enum OverrideConfigRootMetadataKind {
 #[derive(Debug, Clone)]
 pub enum ConfigMemberMetadataKind {
     Complex(ComplexConfigMemberMetadata),
-    Override(OverrideConfigMemberMetadata),
 }
 
 impl ConfigMemberMetadataKind {
@@ -253,8 +252,6 @@ impl ConfigMemberMetadataKind {
     pub fn is_complex(&self) -> bool {
         match self {
             ConfigMemberMetadataKind::Complex(_) => true,
-
-            ConfigMemberMetadataKind::Override(_) => false,
         }
     }
 
@@ -262,8 +259,6 @@ impl ConfigMemberMetadataKind {
     pub fn is_override(&self) -> bool {
         match self {
             ConfigMemberMetadataKind::Complex(_) => false,
-
-            ConfigMemberMetadataKind::Override(_) => true,
         }
     }
 
@@ -277,21 +272,6 @@ impl ConfigMemberMetadataKind {
     pub fn complex(&self) -> Option<&ComplexConfigMemberMetadata> {
         match self {
             ConfigMemberMetadataKind::Complex(meta) => meta.into(),
-            ConfigMemberMetadataKind::Override(_) => None,
-        }
-    }
-
-    pub fn overrid(&self) -> Option<&OverrideConfigMemberMetadata> {
-        match self {
-            ConfigMemberMetadataKind::Override(meta) => todo!("Stamp."),
-            ConfigMemberMetadataKind::Complex(_) => None,
-        }
-    }
-
-    pub fn expect_override(&self) -> &OverrideConfigMemberMetadata {
-        match self {
-            ConfigMemberMetadataKind::Override(meta) => todo!("Stamp"),
-            _ => panic!("Expected `override` metadata, found {:?}", self),
         }
     }
 
@@ -323,14 +303,6 @@ pub struct ComplexConfigMemberMetadata {}
 impl ComplexConfigMemberMetadata {
     pub fn new() -> ComplexConfigMemberMetadata {
         ComplexConfigMemberMetadata {}
-    }
-}
-/// `override` scope `ConfigMember` specific metadata
-#[derive(Debug, Clone)]
-pub struct OverrideConfigMemberMetadata {}
-impl OverrideConfigMemberMetadata {
-    pub fn new() -> OverrideConfigMemberMetadata {
-        OverrideConfigMemberMetadata {}
     }
 }
 
