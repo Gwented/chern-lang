@@ -795,7 +795,7 @@ fn parse_cfg_expr(
         // Ok what about options buddy?
         // No.
         ctx.report_verbose(
-            format!("Use a '{{' block{or_msg} to define config {type_msg}"),
+            format!("Use a '{{' block{or_msg} to define the config {type_msg}"),
             InitialEvidence::new(
                 SemanticEnv::SectNest,
                 SemanticSituation::UnexpectedToken,
@@ -850,9 +850,8 @@ fn parse_cfg_expr(
             // Should this just be earlier? It's own separate earlier if?
         } else if ctx.peek_kind() == TokenKind::Id
             // "var/nest/override Type {}" can be used so we need to catch those semantic identifiers
-            || ctx.peek_tok() == Token::Keyword(Keyword::Var)
-            || ctx.peek_tok() == Token::Keyword(Keyword::Nest)
-            || ctx.peek_tok() == Token::Keyword(Keyword::Override)
+            || matches!(ctx.peek_tok(), Token::Keyword(Keyword::Var)
+                |Token::Keyword(Keyword::Nest) |Token::Keyword(Keyword::Override))
         {
             // for "inner {/*assignments*/}"
             match parse_cfg_expr(ctx, budget, None, false, interner) {
@@ -921,10 +920,12 @@ fn parse_ambiguous_expr(
 
         let sp_path_seg = vec![SpannedContainer::new(PathSegment::Generic(generic), span)];
         return Ok(sp_path_seg);
-    } else if has_static_access {
+    } else if !has_static_access {
         let name_span = ctx.peek_span();
+        //TODO: MAKE THIS MSG CLEARER?
         let name_id = ctx.expect_id_verbose(
             TokenKind::Id,
+            // type expr or namespace?
             "Expected identifier, found ",
             "",
             InitialEvidence::new(

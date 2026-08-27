@@ -268,8 +268,14 @@ async fn test_definition_resolves_to_the_declaration_in_absolute_positions() {
     assert_eq!(
         link.target_range,
         Range {
-            start: Position { line: 2, character: 4 },
-            end: Position { line: 2, character: 9 },
+            start: Position {
+                line: 2,
+                character: 4
+            },
+            end: Position {
+                line: 2,
+                character: 9
+            },
         },
         "`value` is declared on the third line of the file"
     );
@@ -304,8 +310,14 @@ async fn test_cross_module_lookups_reach_an_unopened_exporting_file() {
 
     let use_site = position_of(&text, "READ", 0);
     let declaration = Range {
-        start: Position { line: 0, character: 11 },
-        end: Position { line: 0, character: 15 },
+        start: Position {
+            line: 0,
+            character: 11,
+        },
+        end: Position {
+            line: 0,
+            character: 15,
+        },
     };
 
     let response = session
@@ -335,9 +347,7 @@ async fn test_cross_module_lookups_reach_an_unopened_exporting_file() {
         "the declaration in the unopened file is found, got {references:?}"
     );
     assert!(
-        references
-            .iter()
-            .any(|location| location.uri == uri),
+        references.iter().any(|location| location.uri == uri),
         "the use site in the importing file is found, got {references:?}"
     );
 

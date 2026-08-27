@@ -292,8 +292,14 @@ async fn test_session_publishes_parse_diagnostics_in_absolute_positions() {
     assert_eq!(
         parse_error.range,
         Range {
-            start: Position { line: 2, character: 4 },
-            end: Position { line: 2, character: 5 },
+            start: Position {
+                line: 2,
+                character: 4
+            },
+            end: Position {
+                line: 2,
+                character: 5
+            },
         },
         "the error points at the `=` on the third line of the file"
     );
@@ -512,9 +518,7 @@ async fn test_session_rejected_import_does_not_shift_later_module_ids() {
         "the rejected import is still reported, got {diagnostics:?}"
     );
     assert!(
-        !diagnostics
-            .iter()
-            .any(|d| d.message.contains("`GOOD`")),
+        !diagnostics.iter().any(|d| d.message.contains("`GOOD`")),
         "the surviving import keeps its own namespace, got {diagnostics:?}"
     );
 }
@@ -539,7 +543,8 @@ fn test_uri_to_path_decodes_percent_encoding() {
     );
     assert_eq!(
         path,
-        uri.to_file_path().expect("the workspace URI is a file path"),
+        uri.to_file_path()
+            .expect("the workspace URI is a file path"),
         "the encoded `Url::path` form is never the interned path"
     );
 }

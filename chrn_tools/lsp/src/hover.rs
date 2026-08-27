@@ -280,7 +280,12 @@ fn symbol_hover(
                     Some(v) => format_value(v, interner),
                     None => "unknown".to_string(),
                 };
-                format!("{}: {} = {}", interner.search(sym.name_id), type_str, val_str)
+                format!(
+                    "{}: {} = {}",
+                    interner.search(sym.name_id),
+                    type_str,
+                    val_str
+                )
             }
             VariableState::ReservedTypeSlot(_) => "Unknown".to_string(),
         },
@@ -289,7 +294,10 @@ fn symbol_hover(
             .expect("Namespace should have associated scope")
         {
             AssociatedScopeKind::Module(mod_id) => {
-                format!("module **{}**", interner.search(compiler.mods[mod_id].name_id))
+                format!(
+                    "module **{}**",
+                    interner.search(compiler.mods[mod_id].name_id)
+                )
             }
             AssociatedScopeKind::Scope(_) => {
                 format!("namespace **{}**", interner.search(sym.name_id))
@@ -338,9 +346,8 @@ fn type_symbol_hover(
         Type::Func(func_def) => Document::func_docs(func_def.kind).compose(),
         _ => {
             let t = format_type(&ty_info.ty, compiler, interner, false);
-            let is_named_decl = t.starts_with("struct ")
-                || t.starts_with("enum ")
-                || t.starts_with("alias ");
+            let is_named_decl =
+                t.starts_with("struct ") || t.starts_with("enum ") || t.starts_with("alias ");
             if !is_named_decl {
                 return format!("type: {}", t);
             }

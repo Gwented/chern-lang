@@ -138,7 +138,7 @@ impl<'a> ConstraintResolver<'a> {
         // let abs_cfg_root = env.ast_info.get_cfg_root(ast_id);
 
         // leconstraint_reot module = &self.compiler.mods[env.current_mod];
-        let cfg_root = self.compiler.get_cfg_root_override_mut(todo!());
+        let cfg_root = self.compiler.get_cfg_root_mut(todo!());
 
         let Some(linked_type_id) = cfg_root.linked_sym_id else {
             return;
@@ -163,7 +163,7 @@ impl<'a> ConstraintResolver<'a> {
         //     .get_type_id_from_sym_id(linked_type_id)
         //     .expect("`TypeResolver` should only give linked sym ids to valid configs");
 
-        for opt_root_id in cfg_root.impl_memb_stmts.iter().copied() {
+        for opt_root_id in cfg_root.memb_stmts.iter().copied() {
             let opt_root = self.compiler.get_opt_assignment_root(opt_root_id);
             let schema = schema_lookup::get_schema_from_type_id(&self.compiler.types, todo!())
                 .expect("`TypeResolver` should only give linked sym ids to valid configs");

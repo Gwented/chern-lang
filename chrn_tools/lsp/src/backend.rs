@@ -36,14 +36,14 @@
 //! carry the version they were spawned for; stale results are discarded in
 //! [`crate::analyser::publish_if_current`].
 
+use chrn_utils::source_map::source_span::SourceSpan;
 use compilation::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use compilation::lexer::token::Token as ScriptToken;
-use compilation::module::module_concepts::ModuleState;
-use chrn_utils::source_map::source_span::SourceSpan;
 use compilation::lookup::scopes::scopes_concepts;
+use compilation::module::module_concepts::ModuleState;
+use compilation::parser::ast::ast_concepts::AbstractConfigKind;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::Type;
-use compilation::parser::ast::ast_concepts::AbstractConfigKind;
 use compilation::semantic::hir::hir_impls::{ConfigRootKind, ImplHirKind, ImplMemberKind};
 use compilation::semantic::hir::hir_symbols::{Symbol, SymbolKind, VariableState};
 use parking_lot::RwLock;
@@ -1656,10 +1656,7 @@ impl LanguageServer for Backend {
             for sym in &compiler.symbols.items {
                 if matches!(sym.kind, SymbolKind::Directive(_)) {
                     let name = state.interner.search(sym.name_id);
-                    push_item(
-                        format!("#{}", name),
-                        symbol_completion_kind(compiler, sym),
-                    );
+                    push_item(format!("#{}", name), symbol_completion_kind(compiler, sym));
                 }
             }
 
@@ -1669,13 +1666,10 @@ impl LanguageServer for Backend {
             let current_module = &compiler.mods[ModuleId::new(0)];
             for module in &compiler.mods.items {
                 let is_self = module.mod_id.id == 0;
-                let is_imported = current_module
-                    .imports
-                    .iter()
-                    .any(|i| {
-                        i.name_id == module.name_id
-                            || i.sp_alias_id.as_ref().map(|sp| sp.inner) == Some(module.name_id)
-                    });
+                let is_imported = current_module.imports.iter().any(|i| {
+                    i.name_id == module.name_id
+                        || i.sp_alias_id.as_ref().map(|sp| sp.inner) == Some(module.name_id)
+                });
 
                 if is_self || is_imported {
                     push_item(

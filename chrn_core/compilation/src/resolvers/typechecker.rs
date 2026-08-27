@@ -52,10 +52,7 @@ pub fn check_cfg_root(compiler: &ScriptCompiler, sym_id: SymbolId, scope_type: S
             }
         }
         // Only override section symbols can access a namespace in it's config root.
-        SymbolKind::Namespace if scope_type == ScopeType::Complex => true,
-        SymbolKind::Namespace
-        | SymbolKind::Variable(_)
-        | SymbolKind::Directive(_)
-        | SymbolKind::ExternType => false,
+        SymbolKind::Namespace => true,
+        SymbolKind::Variable(_) | SymbolKind::Directive(_) | SymbolKind::ExternType => false,
     }
 }

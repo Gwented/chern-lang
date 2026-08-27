@@ -40,8 +40,8 @@ use crate::{
         hir_concepts::{BuiltinTypeInfo, Table, Type, TypeInfo},
         hir_exprs::{ExprHir, ResolvedExpr, ResolvedExprMetadata},
         hir_impls::{
-            ConfigDefMember, ConfigRootComplex, ConfigRootKind, ConfigRootOverride, ImplHir,
-            ImplHirKind, ImplMemberKind, OptionAssignmentMember, OptionAssignmentRoot,
+            ConfigDefMember, ConfigRoot, ImplHir, ImplHirKind, ImplMemberKind,
+            OptionAssignmentMember, OptionAssignmentRoot,
         },
         hir_symbols::{
             AliasDef, EnumDef, FieldRepre, FuncDef, MemberSymbolKind, StructDef, Symbol,
@@ -82,7 +82,7 @@ pub struct ScriptCompiler {
     pub variables: Arena<VarDef, VariableId>,
     /// All user defined config. Is considered it's own class instead of a type since it
     /// behaves uniquely
-    pub cfgs: Arena<ConfigRootKind, ConfigRootId>,
+    pub cfgs: Arena<ConfigRoot, ConfigRootId>,
     /// All directives that were found
     pub directives: Arena<Directive, DirectiveId>,
     /// Scope arena
@@ -407,46 +407,16 @@ impl ScriptCompiler {
         }
     }
 
-    pub(super) fn get_cfg_root_override(&self, impl_id: ImplId) -> &ConfigRootOverride {
-        match &self.impls[impl_id] {
-            impl_hir => match &impl_hir.kind {
-                ImplHirKind::Config(cfg_id) => match &self.cfgs[*cfg_id] {
-                    ConfigRootKind::Complex(_) => unreachable!(),
-                    ConfigRootKind::Override(overrid) => overrid,
-                },
-            },
+    pub(super) fn get_cfg_root(&self, impl_id: ImplId) -> &ConfigRoot {
+        match &self.impls[impl_id].kind {
+            ImplHirKind::Config(cfg_id) => &self.cfgs[*cfg_id],
         }
     }
 
-    pub(super) fn get_cfg_root_override_mut(&mut self, impl_id: ImplId) -> &mut ConfigRootOverride {
+    pub(super) fn get_cfg_root_mut(&mut self, impl_id: ImplId) -> &mut ConfigRoot {
         match &self.impls[impl_id] {
             impl_hir => match &impl_hir.kind {
-                ImplHirKind::Config(cfg_id) => match &mut self.cfgs[*cfg_id] {
-                    ConfigRootKind::Override(overrid) => overrid,
-                    ConfigRootKind::Complex(_) => unreachable!(),
-                },
-            },
-        }
-    }
-
-    pub(super) fn get_cfg_root_complex(&self, impl_id: ImplId) -> &ConfigRootComplex {
-        match &self.impls[impl_id] {
-            impl_hir => match &impl_hir.kind {
-                ImplHirKind::Config(cfg_id) => match &self.cfgs[*cfg_id] {
-                    ConfigRootKind::Complex(complex) => complex,
-                    ConfigRootKind::Override(_) => unreachable!(),
-                },
-            },
-        }
-    }
-
-    pub(super) fn get_cfg_root_complex_mut(&mut self, impl_id: ImplId) -> &mut ConfigRootComplex {
-        match &self.impls[impl_id] {
-            impl_hir => match &impl_hir.kind {
-                ImplHirKind::Config(cfg_id) => match &mut self.cfgs[*cfg_id] {
-                    ConfigRootKind::Complex(complex) => complex,
-                    ConfigRootKind::Override(_) => unreachable!(),
-                },
+                ImplHirKind::Config(cfg_id) => &mut self.cfgs[*cfg_id],
             },
         }
     }
@@ -459,20 +429,6 @@ impl ScriptCompiler {
             },
         }
     }
-
-    // pub(super) fn get_cfg_schema(&self, cfg_id: ConfigId) -> &ConfigSchema {
-    //     match &self.configs[cfg_id ] {
-    //         ConfigKind::Schema(cfg_schema) => cfg_schema,
-    //         ConfigKind::Def(_) => unreachable!(),
-    //     }
-    // }
-    //
-    // pub(super) fn get_cfg_schema_mut(&mut self, cfg_id: ConfigId) -> &mut ConfigSchema {
-    //     match &mut self.configs[cfg_id ] {
-    //         ConfigKind::Schema(cfg_schema) => cfg_schema,
-    //         ConfigKind::Def(_) => unreachable!(),
-    //     }
-    // }
 
     /// Assumes the member symbol given is a field
     pub(super) fn get_field(&self, member_id: MemberId) -> &FieldRepre {

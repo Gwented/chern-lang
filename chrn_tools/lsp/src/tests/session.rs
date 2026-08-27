@@ -75,8 +75,8 @@ impl Session {
             diagnostics: HashMap::new(),
         };
 
-        let params = serde_json::to_value(InitializeParams::default())
-            .expect("InitializeParams serializes");
+        let params =
+            serde_json::to_value(InitializeParams::default()).expect("InitializeParams serializes");
         let result = session.request("initialize", params).await;
         let _: InitializeResult =
             serde_json::from_value(result).expect("initialize returns an InitializeResult");
@@ -333,10 +333,7 @@ impl Session {
         poll_fn(|cx| self.service.poll_ready(cx))
             .await
             .expect("server has exited");
-        self.service
-            .call(request)
-            .await
-            .expect("server has exited")
+        self.service.call(request).await.expect("server has exited")
     }
 }
 
@@ -356,7 +353,12 @@ pub fn position_of(text: &str, needle: &str, nth: usize) -> Position {
     let offset = text
         .match_indices(needle)
         .nth(nth)
-        .unwrap_or_else(|| panic!("`{needle}` does not occur {} time(s) in the document", nth + 1))
+        .unwrap_or_else(|| {
+            panic!(
+                "`{needle}` does not occur {} time(s) in the document",
+                nth + 1
+            )
+        })
         .0;
 
     let line = text[..offset].matches('\n').count() as u32;

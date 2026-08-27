@@ -60,7 +60,10 @@ async fn completion_in_the_script_section_offers_keywords() {
     };
 
     let labels: Vec<&str> = items.iter().map(|item| item.label.as_str()).collect();
-    assert!(labels.contains(&"let"), "keywords are offered, got {labels:?}");
+    assert!(
+        labels.contains(&"let"),
+        "keywords are offered, got {labels:?}"
+    );
     assert!(
         labels.contains(&"var->"),
         "section markers are offered, got {labels:?}"
@@ -91,8 +94,14 @@ async fn static_access_on_a_builtin_type_offers_its_namespace_members() {
     };
 
     let labels: Vec<&str> = items.iter().map(|item| item.label.as_str()).collect();
-    assert!(labels.contains(&"MAX"), "`i32::` completes MAX, got {labels:?}");
-    assert!(labels.contains(&"MIN"), "`i32::` completes MIN, got {labels:?}");
+    assert!(
+        labels.contains(&"MAX"),
+        "`i32::` completes MAX, got {labels:?}"
+    );
+    assert!(
+        labels.contains(&"MIN"),
+        "`i32::` completes MIN, got {labels:?}"
+    );
 }
 
 /// Completing inside the current module's namespace never offers compiler-internal
@@ -120,6 +129,12 @@ async fn current_module_completion_hides_builtin_namespace_members() {
 
     let max_count = items.iter().filter(|item| item.label == "MAX").count();
     let min_count = items.iter().filter(|item| item.label == "MIN").count();
-    assert_eq!(max_count, 0, "MAX is not reachable from a module, got {max_count} items");
-    assert_eq!(min_count, 0, "MIN is not reachable from a module, got {min_count} items");
+    assert_eq!(
+        max_count, 0,
+        "MAX is not reachable from a module, got {max_count} items"
+    );
+    assert_eq!(
+        min_count, 0,
+        "MIN is not reachable from a module, got {min_count} items"
+    );
 }

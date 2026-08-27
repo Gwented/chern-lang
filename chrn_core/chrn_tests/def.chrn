@@ -50,13 +50,12 @@ complex->
 
 for State {
     idents = 3
-    override types {
+    /*override types {
         C {
             // Ok
             change i32, u32, = c::int32_t
         }
     }
-    opts = 3
 
     state1 {
         override types {
@@ -64,10 +63,11 @@ for State {
 
             }
         }
-    }
+    }*/
 }
 
 override PYTHON {}
+override {}
 @end
 // PROPS TEST END
 

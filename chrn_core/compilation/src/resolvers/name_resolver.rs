@@ -21,10 +21,7 @@ use crate::{
         compilation_unit::CompilationUnit,
         hir::{
             hir_concepts::{Type, TypeInfo},
-            hir_impls::{
-                ConfigRootCommon, ConfigRootComplex, ConfigRootKind, ConfigRootOverride, ImplHir,
-                ImplHirKind,
-            },
+            hir_impls::{ConfigRoot, ConfigRootCommon, ImplHir, ImplHirKind},
             hir_symbols::{
                 AliasDef, EnumDef, StructDef, Symbol, SymbolKind, SymbolOrigin, TypeDef, VarDef,
                 VariableMetadata, VariableState,
@@ -176,13 +173,7 @@ impl NamespaceResolver<'_> {
 
         let common = ConfigRootCommon::new(impl_id, cfg_root_id, abs_cfg.lookup_pat, Vec::new());
 
-        let cfg_root = if scope_type == ScopeType::Complex {
-            let complex = ConfigRootComplex::new(common, None, Vec::new());
-            ConfigRootKind::Complex(complex)
-        } else {
-            let overrid = ConfigRootOverride::new(common, None, Vec::new());
-            ConfigRootKind::Override(overrid)
-        };
+        let cfg_root = ConfigRoot::new(common, None, Vec::with_capacity(abs_cfg.abs_stmts.len()));
 
         let impl_hir = ImplHir::new(
             impl_id,

@@ -302,7 +302,10 @@ fn scope_core_type_namespace_test() {
 
             assert_eq!(found.scope_found_in, scope_id);
             assert!(
-                matches!(compiler.symbols[found.found_sym_id].kind, SymbolKind::Variable(_)),
+                matches!(
+                    compiler.symbols[found.found_sym_id].kind,
+                    SymbolKind::Variable(_)
+                ),
                 "`{name}::{bound_id:?}` should be a variable"
             );
         }

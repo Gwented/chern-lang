@@ -1249,13 +1249,9 @@ pub(crate) fn resolve_modules_lsp(
             // so a user module may never bind that identifier.
             if official_name_id.id == intern::INTERNED_CORE {
                 let core_msg = "`core` is a reserved module identifier";
-                let src_diag = SourceDiagnostic::builder(
-                    None,
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    path_id,
-                )
-                .build();
+                let src_diag =
+                    SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, path_id)
+                        .build();
                 diags.push(src_diag);
                 importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
                 continue;

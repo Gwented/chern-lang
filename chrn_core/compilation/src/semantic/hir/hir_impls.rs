@@ -57,12 +57,6 @@ pub enum ImplMemberKind {
     },
 }
 
-#[derive(Debug)]
-pub enum ConfigRootKind {
-    Complex(ConfigRootComplex),
-    Override(ConfigRootOverride),
-}
-
 impl ImplMemberKind {
     pub fn is_unknown(&self) -> bool {
         match self {
@@ -111,7 +105,7 @@ impl ConfigRootCommon {
 /// Intended to represent a config block environment that consumes options for a field.
 /// Specifically tied to `overrid` section semantics
 #[derive(Debug)]
-pub struct ConfigRootOverride {
+pub struct ConfigRoot {
     pub common: ConfigRootCommon,
     /// During name resolution, we can't actually lookup the symbol since it may or may not be
     /// registered, so it's Option since it actually is `None` at some point, and could remain
@@ -120,48 +114,22 @@ pub struct ConfigRootOverride {
     //NOTE: Can only be either a type id or namespace. So maybe um...um....!
     pub linked_sym_id: Option<SymbolId>,
     /// Expects `OptionAssignmentRoot`
-    pub impl_memb_stmts: Vec<ImplMemberId>,
+    pub memb_stmts: Vec<ImplMemberId>,
 }
 
-impl ConfigRootOverride {
+impl ConfigRoot {
     pub fn new(
         common: ConfigRootCommon,
         linked_sym_id: Option<SymbolId>,
-        impl_memb_stmts: Vec<ImplMemberId>,
-    ) -> ConfigRootOverride {
-        ConfigRootOverride {
+        memb_stmts: Vec<ImplMemberId>,
+    ) -> ConfigRoot {
+        ConfigRoot {
             common,
             linked_sym_id,
-            impl_memb_stmts,
+            memb_stmts,
         }
     }
 }
-
-/// Intended to represent a config block environment that consumes options for a field.
-/// Specifically tied to `complex` section semantics
-#[derive(Debug)]
-pub struct ConfigRootComplex {
-    pub common: ConfigRootCommon,
-    /// Type only
-    pub linked_type_id: Option<TypeId>,
-    pub impl_stmts: Vec<ImplMemberId>,
-}
-
-impl ConfigRootComplex {
-    pub fn new(
-        common: ConfigRootCommon,
-        linked_type_id: Option<TypeId>,
-        impl_stmts: Vec<ImplMemberId>,
-    ) -> Self {
-        Self {
-            common,
-            linked_type_id,
-            impl_stmts,
-        }
-    }
-}
-
-//WARN: Should these be different structures? OverrideConfigMember? ComplexConfigMember?
 
 /// The member inside of a `ConfigDef` or `ConfigDefMember` which is the same structure,
 /// but with ties to an `ImplMemberKind` instead of a `ImplHir`

@@ -41,12 +41,12 @@ use compilation::lexer::token::SpannedToken;
 use compilation::lexer::token::Token as ScriptToken;
 use compilation::lexer::trivia::Trivia;
 use compilation::lookup::scopes;
-use compilation::module::module_concepts::ImportKind;
-use compilation::module::module_concepts::ModuleState;
 use compilation::lookup::scopes::scopes_concepts::AssociatedScopeKind;
 use compilation::lookup::scopes::scopes_concepts::ScopeLookupPattern;
 use compilation::lookup::scopes::scopes_concepts::ScopeLookupPreferenceFlags;
 use compilation::lookup::scopes::scopes_concepts::ScopeType;
+use compilation::module::module_concepts::ImportKind;
+use compilation::module::module_concepts::ModuleState;
 
 use compilation::parser::ast::ast_concepts::{AbstractDecl, AbstractImpl, AstInfo, Item};
 use compilation::parser::ast::ast_exprs::AstExpr;
@@ -83,11 +83,11 @@ use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::id_types::{
     AstId, ImplId, ImplMemberId, InternedId, ModuleId, PathId, SourceRegionId, SymbolId, TypeId,
 };
-use chrn_utils::utils::containers::SpannedContainer;
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
 use chrn_utils::source_map::source_region::SourceRegion;
 use chrn_utils::source_map::source_span::SourceSpan;
+use chrn_utils::utils::containers::SpannedContainer;
 
 /// Identifies the semantic construct that occupies a particular source span.
 ///
@@ -371,7 +371,8 @@ impl DocumentState {
         // their targets — they iterate `compilation_syms` instead.
         let mut compilation_syms: Vec<Option<Vec<CompilationUnit>>> = Vec::with_capacity(mod_len);
         {
-            let mut ns_resolver = NamespaceResolver::new(&mut chrn_cfg, &self.interner, &mut compiler);
+            let mut ns_resolver =
+                NamespaceResolver::new(&mut chrn_cfg, &self.interner, &mut compiler);
 
             for env_opt in &registration_envs {
                 let Some(env) = env_opt else {
@@ -413,7 +414,8 @@ impl DocumentState {
             // Member resolution (fields/variants) for all modules.  A single
             // `MemberResolver` is reused across modules and iterates each env's
             // `compilation_syms` internally rather than walking the AST.
-            let mut member_resolver = MemberResolver::new(&mut chrn_cfg, &self.interner, &mut compiler);
+            let mut member_resolver =
+                MemberResolver::new(&mut chrn_cfg, &self.interner, &mut compiler);
 
             for env in resolver_envs.iter().flatten() {
                 let mut member_summary = member_resolver.resolve(env);
@@ -446,7 +448,8 @@ impl DocumentState {
             // `compiler.exprs.len()` could be read between iterations to track
             // `main_expr_range`; `build_symbol_map` now filters expressions by
             // the main module's region id instead, which needs no such borrow.
-            let mut type_resolver = TypeResolver::new(&mut chrn_cfg, &mut self.interner, &mut compiler);
+            let mut type_resolver =
+                TypeResolver::new(&mut chrn_cfg, &mut self.interner, &mut compiler);
             for env in resolver_envs.iter().flatten() {
                 let mut ty_summary = type_resolver.resolve(env);
                 if !ty_summary.diags.is_empty() {
@@ -1848,7 +1851,8 @@ impl RefCollector<'_> {
                     self.map
                         .push((acc.base.span, SemanticEntity::Module(found_mod)));
 
-                    let field_span = self.member_name_span(acc.base.span.end, expr.span.end, acc.field);
+                    let field_span =
+                        self.member_name_span(acc.base.span.end, expr.span.end, acc.field);
                     if let Some(sym_id) = self.lookup_in_module(
                         found_mod,
                         acc.field,

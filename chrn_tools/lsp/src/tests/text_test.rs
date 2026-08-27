@@ -118,8 +118,10 @@ fn dedup_reference(ranges: &[Range]) -> Vec<usize> {
             if i == j {
                 return false;
             }
-            let starts_after_or_at = (r2.start.line, r2.start.character) >= (r1.start.line, r1.start.character);
-            let ends_before_or_at = (r2.end.line, r2.end.character) <= (r1.end.line, r1.end.character);
+            let starts_after_or_at =
+                (r2.start.line, r2.start.character) >= (r1.start.line, r1.start.character);
+            let ends_before_or_at =
+                (r2.end.line, r2.end.character) <= (r1.end.line, r1.end.character);
             starts_after_or_at
                 && ends_before_or_at
                 && (r1.start != r2.start || r1.end != r2.end || j < i)

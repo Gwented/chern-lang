@@ -67,11 +67,18 @@ async fn test_semantic_tokens_are_emitted_in_absolute_positions() {
     };
 
     let [directive, keyword, ..] = tokens.data.as_slice() else {
-        panic!("the fixture produces at least two tokens, got {:?}", tokens.data);
+        panic!(
+            "the fixture produces at least two tokens, got {:?}",
+            tokens.data
+        );
     };
 
     assert_eq!(
-        (directive.delta_line, directive.delta_start, directive.length),
+        (
+            directive.delta_line,
+            directive.delta_start,
+            directive.length
+        ),
         (1, 0, 4),
         "the first token is `@def` on the second line of the file"
     );

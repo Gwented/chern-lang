@@ -9,11 +9,11 @@ use chrn_utils::{
     source_map::source_span::SourceSpan,
     utils::containers::SpannedContainer,
 };
+use lang::directives::Directive;
 use lang::{
     chrn_classifier::ChrnClassifiable,
     types::builtins::{BuiltinType, BuiltinTypeKind},
 };
-use lang::{chrn_classifier::ChrnClassifier, directives::Directive};
 
 use crate::{
     lookup::scopes::{
@@ -34,10 +34,7 @@ use crate::{
             hir_concepts::{BuiltinTypeInfo, Type, TypeInfo},
             hir_symbols::{Symbol, SymbolKind, SymbolOrigin},
         },
-        preset_reporter::preset_err::PresetErr,
-        resolution::resolution_concepts::{
-            AmbiguousAccessOutput, StaticAccessOption, StaticAccessResult, TypeExprResult,
-        },
+        resolution::resolution_concepts::{StaticAccessOption, StaticAccessResult, TypeExprResult},
     },
 };
 /// - associated_scope: The environment to search in
@@ -93,10 +90,6 @@ pub fn resolve_type_expr(
                             TypeExprResult::Type(type_id)
                         }
                         SymbolKind::Namespace => {
-                            let fmtted = found_sym
-                                .associated_scope
-                                .expect("Should be namespace")
-                                .to_classified();
                             return TypeExprResult::NotAType {
                                 found_sym_id,
                                 sp_name_id,

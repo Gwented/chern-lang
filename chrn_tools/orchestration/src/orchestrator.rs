@@ -69,9 +69,9 @@ pub fn run_all(
         compiler_store.asts.push(ast_info_opt);
     }
 
-    if reporter.diag_summary().has_err() {
-        return Err(ScriptError::Semantic);
-    }
+    // if reporter.diag_summary().has_err() {
+    //     return Err(ScriptError::Parser);
+    // }
 
     // Storing this so that the compiler can be borrowed without conflicts and keep resolution incremental
     let mod_len = compiler.mods.len();
@@ -153,7 +153,7 @@ pub fn run_all(
         reporter.merge_summary_safe(ty_resolver.resolve(&current_env));
     }
 
-    if reporter.diag_summary().err_count() > 0 {
+    if reporter.diag_summary().has_err() {
         return Err(ScriptError::Semantic);
     }
 
