@@ -119,11 +119,11 @@ pub enum SemanticEntity {
         owner_sym_id: Option<SymbolId>,
     },
     /// A nested config member block (`.fieldName { }`) inside a `complex->` block.
-    /// Resolves to a `ConfigDefMember` whose `linked_member_id` points to the actual field.
+    /// Resolves to a `ConfigMember` whose `linked_member_id` points to the actual field.
     ConfigMember {
         /// `ImplId` of the `ImplHir` (config root) this member belongs to.
         cfg_root_impl_id: ImplId,
-        /// `ImplMemberId` of the `ConfigDefMember` itself.
+        /// `ImplMemberId` of the `ConfigMember` itself.
         member_id: ImplMemberId,
     },
     /// An option-assignment key (e.g. `.casing = [...]`) inside a root or member config block.
@@ -625,7 +625,7 @@ impl DocumentState {
 
             // Root members
             for &impl_member_id in &cfg_common.cfg_members {
-                if let ImplMemberKind::ConfigDefMember(mem) = &compiler.impl_members[impl_member_id]
+                if let ImplMemberKind::ConfigMember(mem) = &compiler.impl_members[impl_member_id]
                 {
                     map.push((
                         mem.name_span,
@@ -640,7 +640,7 @@ impl DocumentState {
 
             // Traverse nested members
             while let Some(current_member_id) = queue.pop() {
-                if let ImplMemberKind::ConfigDefMember(mem) =
+                if let ImplMemberKind::ConfigMember(mem) =
                     &compiler.impl_members[current_member_id]
                 {
                     for &opt_id in &mem.opt_assignments {
@@ -656,8 +656,8 @@ impl DocumentState {
                             ));
                         }
                     }
-                    for &child_member_id in &mem.cfg_def_members {
-                        if let ImplMemberKind::ConfigDefMember(child_mem) =
+                    for &child_member_id in &mem.cfg_members {
+                        if let ImplMemberKind::ConfigMember(child_mem) =
                             &compiler.impl_members[child_member_id]
                         {
                             map.push((
@@ -1098,7 +1098,7 @@ impl DocumentState {
             )),
             SemanticEntity::ConfigMember { member_id, .. } => {
                 let compiler = self.compiler.as_ref()?;
-                let name_span = compiler.get_cfg_def_member(*member_id).name_span;
+                let name_span = compiler.get_cfg_member(*member_id).name_span;
                 Some((self.module_path(ModuleId::new(0))?, name_span, None))
             }
             SemanticEntity::Module(mod_id) => {

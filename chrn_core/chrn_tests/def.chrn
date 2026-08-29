@@ -50,6 +50,7 @@ complex->
 
 for State {
     idents = 3
+    stating {}
     /*override types {
         C {
             // Ok
@@ -66,8 +67,6 @@ for State {
     }*/
 }
 
-override PYTHON {}
-override {}
 @end
 // PROPS TEST END
 

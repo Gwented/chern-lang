@@ -204,7 +204,7 @@ impl<'a> ConstraintResolver<'a> {
         //         continue;
         //     }
         //
-        //     let cfg_member = self.compiler.get_cfg_def_member(cfg_member_id);
+        //     let cfg_member = self.compiler.get_cfg_member(cfg_member_id);
         //     //NOTE: The somewhat dangerous part of this staying `Option` is that it IS a real
         //     //reflection of the fact that for something like a variant, there COULD be no boundary
         //     //set, but it could also hide silent bugs, just like in the recursive resolution of
@@ -260,8 +260,8 @@ impl<'a> ConstraintResolver<'a> {
         //     // Recursively resolves inner members
         //     // self.resolve_cfg_member(cfg_member_id, env);
         //
-        //     // for thing in cfg_member.cfg_def_members.iter().cloned() {
-        //     //     let mem = self.compiler.get_cfg_def_member(thing);
+        //     // for thing in cfg_member.cfg_members.iter().cloned() {
+        //     //     let mem = self.compiler.get_cfg_member(thing);
         //     //     dbg!(self.interner.search(mem.name_id));
         //     //     dbg!(mem);
         //     //     dbg!(thing);

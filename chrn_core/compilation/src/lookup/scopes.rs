@@ -1,5 +1,6 @@
 //! Scope traversal functions
 pub mod scopes_concepts;
+pub mod scopes_helpers;
 
 use chrn_utils::{
     id_types::{InternedId, MemberId, ModuleId, ScopeId, SourceRegionId, SymbolId, TypeId},

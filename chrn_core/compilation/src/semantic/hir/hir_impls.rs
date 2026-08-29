@@ -42,8 +42,8 @@ pub enum ImplHirKind {
 
 #[derive(Debug)]
 pub enum ImplMemberKind {
-    /// `ConfigDefMember`
-    ConfigDefMember(ConfigDefMember),
+    /// `ConfigMember`
+    ConfigMember(ConfigMember),
     /// Root specific option assignment
     OptAssignmentRoot(OptionAssignmentRoot),
     /// Member specific option assignment
@@ -79,7 +79,7 @@ pub struct ConfigRootCommon {
     pub lookup_pat: ScopeLookupPattern,
     // /// ISOLATE
     // pub kind: ConfigRootKindFlat,
-    /// Expects `ConfigDefMember`
+    /// Expects `ConfigMember`
     pub cfg_members: Vec<ImplMemberId>,
 }
 
@@ -131,10 +131,13 @@ impl ConfigRoot {
     }
 }
 
-/// The member inside of a `ConfigDef` or `ConfigDefMember` which is the same structure,
-/// but with ties to an `ImplMemberKind` instead of a `ImplHir`
+pub enum ConfigRootKind {
+    Namespace,
+    Type,
+}
+
 #[derive(Debug)]
-pub struct ConfigDefMember {
+pub struct ConfigMemberCommon {
     /// Is a name id instead of symbol id since `NameResolver` merely registers names, with no
     /// knowledge of symbol specifics. A dependency system may be used in the future.
     pub name_id: InternedId,
@@ -142,6 +145,23 @@ pub struct ConfigDefMember {
     pub name_span: SourceSpan,
     /// `ImplMemberId` of `self`
     pub impl_member_id: ImplMemberId,
+}
+
+impl ConfigMemberCommon {
+    pub fn new(name_id: InternedId, name_span: SourceSpan, impl_member_id: ImplMemberId) -> Self {
+        Self {
+            name_id,
+            name_span,
+            impl_member_id,
+        }
+    }
+}
+
+/// The member inside of a `ConfigDef` or `ConfigMember` which is the same structure,
+/// but with ties to an `ImplMemberKind` instead of a `ImplHir`
+#[derive(Debug)]
+pub struct ConfigMember {
+    common: ConfigMemberCommon,
     /// `MemberId` of the member symbol this is attached to
     pub linked_member_id: MemberId,
     // This is mostly here because the padding is going to make it 80 bytes anyways so why not store
@@ -163,31 +183,27 @@ pub struct ConfigDefMember {
     /// this config member
     pub lookup_pat: ScopeLookupPattern,
     /// Members this member holds
-    pub cfg_def_members: Vec<ImplMemberId>,
+    pub cfg_members: Vec<ImplMemberId>,
 }
 
-impl ConfigDefMember {
+impl ConfigMember {
     pub fn new(
-        name_id: InternedId,
-        name_span: SourceSpan,
-        impl_member_id: ImplMemberId,
+        common: ConfigMemberCommon,
         linked_member_id: MemberId,
         linked_member_type_id: Option<TypeId>,
         metadata: ConfigMemberMetadataKind,
         lookup_pat: ScopeLookupPattern,
         opt_assignments: Vec<ImplMemberId>,
-        cfg_def_members: Vec<ImplMemberId>,
-    ) -> ConfigDefMember {
-        ConfigDefMember {
-            name_id,
-            impl_member_id,
+        cfg_members: Vec<ImplMemberId>,
+    ) -> ConfigMember {
+        ConfigMember {
+            common,
             linked_member_id,
             linked_member_type_id,
-            name_span,
             metadata,
             opt_assignments,
             lookup_pat,
-            cfg_def_members,
+            cfg_members,
         }
     }
 }
@@ -203,6 +219,7 @@ pub enum ConfigRootMetadataKind {
 // Oh my.
 /// In `override`, it has the choice between directly interacting with a global namespace like "JAVA"
 /// or with a user defined type.
+#[derive(Debug, Clone)]
 pub enum OverrideConfigRootMetadataKind {
     Namespace(SpannedContainer<InternedId>),
     Type(SpannedContainer<TypeExpr>),
@@ -212,6 +229,7 @@ pub enum OverrideConfigRootMetadataKind {
 #[derive(Debug, Clone)]
 pub enum ConfigMemberMetadataKind {
     Complex(ComplexConfigMemberMetadata),
+    Override(OverrideConfigMemberMetadata),
 }
 
 impl ConfigMemberMetadataKind {
@@ -220,12 +238,14 @@ impl ConfigMemberMetadataKind {
     pub fn is_complex(&self) -> bool {
         match self {
             ConfigMemberMetadataKind::Complex(_) => true,
+            ConfigMemberMetadataKind::Override(_) => false,
         }
     }
 
     /// Returns `true` if override variant, false otherwise
     pub fn is_override(&self) -> bool {
         match self {
+            ConfigMemberMetadataKind::Override(_) => true,
             ConfigMemberMetadataKind::Complex(_) => false,
         }
     }
@@ -237,30 +257,12 @@ impl ConfigMemberMetadataKind {
         }
     }
 
-    pub fn complex(&self) -> Option<&ComplexConfigMemberMetadata> {
+    pub fn expect_override(&self) -> &OverrideConfigMemberMetadata {
         match self {
-            ConfigMemberMetadataKind::Complex(meta) => meta.into(),
+            ConfigMemberMetadataKind::Override(meta) => meta,
+            _ => panic!("Expected `override` metadata, found {:?}", self),
         }
     }
-
-    // pub fn name_id(&self) -> InternedId {
-    //     match self {
-    //         ConfigMemberMetadataKind::Complex(meta) => {
-    //             // If there exists a name id that means it was a declaration with a member of
-    //             // some kind
-    //             if let Some(name_id) = meta.name_id_opt {
-    //                 name_id
-    //
-    //                 // If there exists no name id then it is an "override {}" block
-    //                 // NOTE: Should probably just make this a specialized enum instead of
-    //                 // heuristic decision making
-    //             } else {
-    //                 InternedId::new(intern::INTERNED_OVERRIDE)
-    //             }
-    //         }
-    //         ConfigMemberMetadataKind::Override(meta) => todo!("STOP USING OVERRIDE"),
-    //     }
-    // }
 }
 
 //NOTE: UNUSED
@@ -269,16 +271,26 @@ impl ConfigMemberMetadataKind {
 pub struct ComplexConfigMemberMetadata {}
 
 impl ComplexConfigMemberMetadata {
-    pub fn new() -> ComplexConfigMemberMetadata {
-        ComplexConfigMemberMetadata {}
+    pub const fn new() -> Self {
+        Self {}
+    }
+}
+
+/// `complex` scope `ConfigMember` specific metadata
+#[derive(Debug, Clone)]
+pub struct OverrideConfigMemberMetadata {}
+
+impl OverrideConfigMemberMetadata {
+    pub const fn new() -> Self {
+        Self {}
     }
 }
 
 // Would be:
 // Person {
-//      .identifiers = "person" <--- This is a root opt
+//      identifiers = "person" <--- This is a root opt
 //      name {
-//          .default_val = 3 <--- This is a member opt
+//          default_val = 3 <--- This is a member opt
 //      }
 // }
 /// Represents options and their values assigned by the user at root
@@ -325,7 +337,7 @@ impl OptionAssignmentRoot {
 /// the root itself
 #[derive(Debug)]
 pub struct OptionAssignmentMember {
-    /// `MemberId` of the `ConfigDefMember` it is derivative of
+    /// `MemberId` of the `ConfigMember` it is derivative of
     pub parent_member_id: MemberId,
     /// `MemberId` of `self`
     pub impl_member_id: ImplMemberId,

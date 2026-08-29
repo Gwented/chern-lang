@@ -607,7 +607,7 @@ fn configured_option_names(
             ImplMemberKind::OptAssignmentMember(option) => Some(option.name_id),
             //TODO: `MultiTypeAssignment` assigns types, not config options, and is
             //unfinished in core.
-            ImplMemberKind::ConfigDefMember(_)
+            ImplMemberKind::ConfigMember(_)
             | ImplMemberKind::MultiTypeAssignment(_)
             | ImplMemberKind::Unknown { .. } => None,
         })
@@ -621,16 +621,16 @@ fn config_candidate_for_member(
     pairs: &HashMap<u32, u32>,
     candidates: &mut Vec<ConfigCompletionCandidate>,
 ) {
-    let ImplMemberKind::ConfigDefMember(member) = &compiler.impl_members[member_id] else {
+    let ImplMemberKind::ConfigMember(member) = &compiler.impl_members[member_id] else {
         return;
     };
 
     if let Some((open, close)) = config_block_bounds(state, pairs, member.name_span.end) {
         let configured_members = member
-            .cfg_def_members
+            .cfg_members
             .iter()
             .filter_map(|child_id| match &compiler.impl_members[*child_id] {
-                ImplMemberKind::ConfigDefMember(child) => Some(child.name_id),
+                ImplMemberKind::ConfigMember(child) => Some(child.name_id),
                 ImplMemberKind::OptAssignmentRoot(_)
                 | ImplMemberKind::OptAssignmentMember(_)
                 | ImplMemberKind::MultiTypeAssignment(_)
@@ -649,7 +649,7 @@ fn config_candidate_for_member(
         });
     }
 
-    for &child_id in &member.cfg_def_members {
+    for &child_id in &member.cfg_members {
         config_candidate_for_member(compiler, child_id, state, pairs, candidates);
     }
 }
@@ -722,7 +722,7 @@ fn config_completion_candidate(
                 .cfg_members
                 .iter()
                 .filter_map(|member_id| match &compiler.impl_members[*member_id] {
-                    ImplMemberKind::ConfigDefMember(member) => Some(member.name_id),
+                    ImplMemberKind::ConfigMember(member) => Some(member.name_id),
                     ImplMemberKind::OptAssignmentRoot(_)
                     | ImplMemberKind::OptAssignmentMember(_)
                     | ImplMemberKind::MultiTypeAssignment(_)

@@ -570,7 +570,7 @@ pub struct AbstractConfig {
     // pub name_id: InternedId,
     /// Span assocaited with name to configure
     // pub name_span: SourceSpan,
-    //// Config specific to the origin of this metadata. ONLY `ConfigDefMember` can have this.
+    //// Config specific to the origin of this metadata. ONLY `ConfigMember` can have this.
     pub kind: AbstractConfigKind,
     /// Configuration options for the current parent to apply
     pub abs_stmts: Vec<AbstractStmt>,
@@ -579,13 +579,6 @@ pub struct AbstractConfig {
     pub lookup_pat: ScopeLookupPattern,
     /// Configuration for inner fields to define recursively
     pub cfg_members: Vec<AbstractConfig>,
-}
-
-//TEST:
-/// Semantic!
-pub enum ConfigMemberNameKind {
-    Interned(InternedId),
-    Override,
 }
 
 impl AbstractConfig {
@@ -617,47 +610,6 @@ pub enum AbstractConfigKind {
     /// :(
     Member(SpannedContainer<InternedId>, ConfigMemberMetadataKind),
 }
-
-//TEST: Might need this if these are genuinely distinctly different types if an origin is
-//accounted for beep
-// #[derive(Debug)]
-// pub struct AbstractConfigInner {
-//     // In regards to "var->" defined variables, I think just allowing for, "var.inner" would be the
-//     // best in regards to accessing and changing fields
-//     // Could be a "Outer.a { }" where it is defining it's fields config specifically
-//     /// Name of assumed member to configure
-//     pub name_id: InternedId,
-//     /// Span assocaited with name to configure
-//     pub name_span: SourceSpan,
-//     /// Configuration options for the current member to apply
-//     pub opt_assignments: Vec<AbstractOptionAssignment>,
-//     /// Configuration for inner fields to define recursively
-//     pub inner_field_cfg: Vec<AbstractConfigInner>,
-// }
-//
-// impl AbstractConfigInner {
-//     pub fn new(
-//         name_id: InternedId,
-//         name_span: SourceSpan,
-//         opt_assignments: Vec<AbstractOptionAssignment>,
-//         inner_field_cfg: Vec<AbstractConfigInner>,
-//     ) -> AbstractConfigInner {
-//         AbstractConfigInner {
-//             name_id,
-//             name_span,
-//             opt_assignments,
-//             inner_field_cfg,
-//         }
-//     }
-// }
-//
-// // Would not be ScopeType since the other scope types would be marked as unreachable to where it
-// // would seeming be non-productive.
-// // Or maybe not?
-// // pub enum RootConfigOrigin {
-// //      Var,
-// //      Nest
-// // }
 
 #[derive(Debug)]
 pub struct AbstractParam {

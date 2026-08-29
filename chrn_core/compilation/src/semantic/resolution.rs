@@ -375,7 +375,7 @@ fn resolve_generic(
 /// done because if there is no `::` after the current segment, then going further does no real help
 /// for resolution.
 pub fn resolve_static_access(
-    compiler: &mut ScriptCompiler,
+    compiler: &ScriptCompiler,
     sp_path_segs: &[SpannedContainer<PathSegment>],
     mut current_scope: AssociatedScopeKind,
     scope_type: ScopeType,
@@ -394,8 +394,6 @@ pub fn resolve_static_access(
     }
 
     for (i, sp_path_seg) in sp_path_segs.iter().enumerate() {
-        // Sure hope there aren't any unintended consequences associated with this small change
-        //
         // This is here so that something like "i32::MAX" is still doable at root.
         // The issue is, `NamespaceOnly` gets rid of the core module because it's rules are more
         // like IN namespace only rather than search in this specific namespace which may be a

@@ -1,6 +1,15 @@
 //! Helper routing structs for config members that are from different sections, which have different
 //! semantics
-use chrn_utils::id_types::{SymbolId, TypeId};
+use chrn_utils::{
+    id_types::{MemberId, SymbolId, TypeId},
+    utils::containers::SpannedContainer,
+};
+
+use crate::{
+    lookup::member_lookup::MemberLookupResult,
+    parser::ast::ast_exprs::PathSegment,
+    semantic::resolution::resolution_concepts::{StaticAccessResult, TypeExprResult},
+};
 
 /// Struct for routing given a particular config member section origin setting
 
@@ -12,10 +21,18 @@ use chrn_utils::id_types::{SymbolId, TypeId};
 //
 
 #[derive(Debug)]
-pub(super) enum ConfigMemberOutput {
-    Namespace(SymbolId),
-    Type(TypeId),
+pub(super) enum ConfigMemberResult {
+    Member(MemberLookupResult),
+    Namespace(StaticAccessResult),
 }
+
+pub(super) enum ConfigMemberOutput {
+    Member(MemberId),
+    Namespace(SymbolId),
+}
+
+#[derive(Debug)]
+pub(super) enum ConfigMemberError {}
 
 //TODO: We may need 3 different contexts embedded total.
 //1: Complex, which only takes in a type
@@ -23,9 +40,10 @@ pub(super) enum ConfigMemberOutput {
 //3: Override struct, which through the namespace alters it's particular internals.
 
 #[derive(Debug)]
-pub(super) enum ConfigMemberContextKind {
+pub(super) enum ConfigMemberContextKind<'a> {
+    // Config member member context
     Complex(ConfigMemberComplexContext),
-    Override(ConfigMemberOverrideContext),
+    Override(ConfigMemberOverrideContext<'a>),
 }
 
 #[derive(Debug)]
@@ -40,12 +58,16 @@ impl ConfigMemberComplexContext {
 }
 
 #[derive(Debug)]
-pub(super) struct ConfigMemberOverrideContext {
+pub(super) struct ConfigMemberOverrideContext<'a> {
     pub(super) sym_id: SymbolId,
+    pub(super) sp_path_segs: &'a [SpannedContainer<PathSegment>],
 }
 
-impl ConfigMemberOverrideContext {
-    pub(super) fn new(sym_id: SymbolId) -> Self {
-        Self { sym_id }
+impl<'a> ConfigMemberOverrideContext<'a> {
+    pub(super) fn new(sym_id: SymbolId, sp_path_segs: &'a [SpannedContainer<PathSegment>]) -> Self {
+        Self {
+            sym_id,
+            sp_path_segs,
+        }
     }
 }

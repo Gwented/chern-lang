@@ -40,8 +40,8 @@ use crate::{
         hir_concepts::{BuiltinTypeInfo, Table, Type, TypeInfo},
         hir_exprs::{ExprHir, ResolvedExpr, ResolvedExprMetadata},
         hir_impls::{
-            ConfigDefMember, ConfigRoot, ImplHir, ImplHirKind, ImplMemberKind,
-            OptionAssignmentMember, OptionAssignmentRoot,
+            ConfigMember, ConfigRoot, ImplHir, ImplHirKind, ImplMemberKind, OptionAssignmentMember,
+            OptionAssignmentRoot,
         },
         hir_symbols::{
             AliasDef, EnumDef, FieldRepre, FuncDef, MemberSymbolKind, StructDef, Symbol,
@@ -463,17 +463,17 @@ impl ScriptCompiler {
     }
 
     /// Assumes the impl member given is a config member
-    pub fn get_cfg_def_member(&self, impl_member_id: ImplMemberId) -> &ConfigDefMember {
+    pub fn get_cfg_member(&self, impl_member_id: ImplMemberId) -> &ConfigMember {
         match &self.impl_members[impl_member_id] {
-            ImplMemberKind::ConfigDefMember(cfg_def_member) => cfg_def_member,
+            ImplMemberKind::ConfigMember(cfg_member) => cfg_member,
             _ => unreachable!(),
         }
     }
 
     /// Assumes the impl member given is a config member
-    pub fn get_cfg_def_member_mut(&mut self, impl_member_id: ImplMemberId) -> &mut ConfigDefMember {
+    pub fn get_cfg_member_mut(&mut self, impl_member_id: ImplMemberId) -> &mut ConfigMember {
         match &mut self.impl_members[impl_member_id] {
-            ImplMemberKind::ConfigDefMember(cfg_def_member) => cfg_def_member,
+            ImplMemberKind::ConfigMember(cfg_member) => cfg_member,
             _ => unreachable!(),
         }
     }

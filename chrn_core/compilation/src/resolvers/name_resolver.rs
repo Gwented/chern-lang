@@ -173,7 +173,9 @@ impl NamespaceResolver<'_> {
 
         let common = ConfigRootCommon::new(impl_id, cfg_root_id, abs_cfg.lookup_pat, Vec::new());
 
-        let cfg_root = ConfigRoot::new(common, None, Vec::with_capacity(abs_cfg.abs_stmts.len()));
+        // Purposefully not allocating capacity because this stage is just instantiating, with no
+        // promise that the present vec will be appended or moved in any form.
+        let cfg_root = ConfigRoot::new(common, None, Vec::new());
 
         let impl_hir = ImplHir::new(
             impl_id,

@@ -2,11 +2,10 @@
 // as the literal module name, despite them just being free functions. Maybe just a "concepts" separation.
 
 use chrn_utils::{
-    id_types::{ExprId, InternedId, ModuleId, SymbolId, TypeId},
+    id_types::{InternedId, ModuleId, SymbolId, TypeId},
     source_map::source_span::SourceSpan,
     utils::containers::SpannedContainer,
 };
-use lang::chrn_classifier::ChrnClassifier;
 
 use crate::lookup::scopes::scopes_concepts::AssociatedScopeKind;
 
@@ -14,6 +13,7 @@ use crate::lookup::scopes::scopes_concepts::AssociatedScopeKind;
 //is probably not the most concise design but it works for now so may not need changing.
 /// Result type for type expr resolution attempts. This exists due to the fact that there is no `Ok` or `Err`
 /// inherit concept behind whether or not something was found.
+#[derive(Debug)]
 pub enum TypeExprResult {
     /// Found a type with no issues
     Type(TypeId),
@@ -62,6 +62,7 @@ impl TypeExprResult {
 
 /// Result type for static access resolution attempts. This exists due to the fact that there is no
 /// `Ok` or `Err` inherit concept behind whether or not something was found
+#[derive(Debug)]
 pub enum StaticAccessResult {
     /// Scope found with no issues
     Scope(AssociatedScopeKind),

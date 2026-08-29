@@ -36,13 +36,49 @@ pub fn check_field_or_variant(types: &Arena<TypeInfo, TypeId>, mut type_id: Type
 }
 
 /// Returns `true` if the type is a valid config root candidate, `false` if invalid
-pub fn check_cfg_root(compiler: &ScriptCompiler, sym_id: SymbolId, scope_type: ScopeType) -> bool {
+pub fn check_cfg_root(compiler: &ScriptCompiler, sym_id: SymbolId) -> bool {
     let sym = &compiler.symbols[sym_id];
     match sym.kind {
         SymbolKind::Type(mut type_id) => {
             let checked = walk_type_id_deferred!(&compiler.types, type_id);
             match &compiler.types[checked.inner].ty {
                 Type::TypeDef(_) | Type::Struct(_) | Type::Enum(_) => return true,
+                Type::BuiltinTypeInfo(_)
+                | Type::Unknown
+                | Type::Boundaries(_)
+                | Type::Func(_)
+                | Type::Alias(_) => return false,
+                Type::Deferred(_) => unreachable!(),
+            }
+        }
+        // Only override section symbols can access a namespace in it's config root.
+        SymbolKind::Namespace => true,
+        SymbolKind::Variable(_) | SymbolKind::Directive(_) | SymbolKind::ExternType => false,
+    }
+}
+
+/// Returns `true` if the type is a valid override config member candidate, `false` if invalid
+pub fn check_cfg_memb_override(compiler: &ScriptCompiler, sym_id: SymbolId) -> bool {
+    let sym = &compiler.symbols[sym_id];
+    match sym.kind {
+        // Only override section symbols can access a namespace in it's config root.
+        SymbolKind::Namespace => true,
+        SymbolKind::Variable(_)
+        | SymbolKind::Type(_)
+        | SymbolKind::Directive(_)
+        | SymbolKind::ExternType => false,
+    }
+}
+
+/// Returns `true` if the type is a valid complex config member candidate, `false` if invalid
+pub fn check_cfg_memb_complex(compiler: &ScriptCompiler, sym_id: SymbolId) -> bool {
+    let sym = &compiler.symbols[sym_id];
+    match sym.kind {
+        SymbolKind::Type(mut type_id) => {
+            let checked = walk_type_id_deferred!(&compiler.types, type_id);
+            match &compiler.types[checked.inner].ty {
+                Type::TypeDef(_) | Type::Struct(_) | Type::Enum(_) => return true,
+                // Brain failing here
                 Type::BuiltinTypeInfo(_)
                 | Type::Unknown
                 | Type::Boundaries(_)

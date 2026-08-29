@@ -496,7 +496,7 @@ fn config_member_hover(
     compiler: &ScriptCompiler,
     member_id: chrn_utils::id_types::ImplMemberId,
 ) -> String {
-    let cfg_member = compiler.get_cfg_def_member(member_id);
+    let cfg_member = compiler.get_cfg_member(member_id);
     let name = state.interner.search(cfg_member.name_id);
     let type_of = |type_id| {
         strip_struct_enum_prefix(&format_type(

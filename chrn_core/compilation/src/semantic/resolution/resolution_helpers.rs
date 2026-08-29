@@ -23,7 +23,7 @@ use crate::{
 // Incredible name
 // With is a little odd since, it's not with it's just returning, but ret_preset seems...completely
 // fine actually
-/// Wrapper over `resolve::resolve_type_expr` which covers preset handling boiler-plate
+/// Convenience over `resolution::resolve_type_expr` which covers preset handling boiler-plate
 pub(crate) fn resolve_type_expr_ret_preset(
     compiler: &mut ScriptCompiler,
     associated_scope: AssociatedScopeKind,
@@ -51,9 +51,9 @@ pub(crate) fn resolve_type_expr_ret_preset(
     }
 }
 
-/// Wrapper over `resolve::resolve_static_access` which covers preset handling boiler-plate
+/// Convenience over `resolution::resolve_static_access` which covers preset handling boiler-plate
 pub(crate) fn resolve_static_access_ret_preset(
-    compiler: &mut ScriptCompiler,
+    compiler: &ScriptCompiler,
     sp_path_segs: &[SpannedContainer<PathSegment>],
     current_scope: AssociatedScopeKind,
     scope_type: ScopeType,
@@ -80,6 +80,7 @@ pub(crate) fn resolve_static_access_ret_preset(
     }
 }
 
+/// Convenience over `resolution::resolve_generic` which covers preset handling boiler-plate
 pub(crate) fn resolve_generic_ret_preset(
     compiler: &mut ScriptCompiler,
     // Span me a new container
@@ -108,36 +109,7 @@ pub(crate) fn resolve_generic_ret_preset(
     }
 }
 
-// pub fn resolve_opt_assignments(
-//     compiler: &mut ScriptCompiler,
-//     abs_opts: &[&AbstractOptionAssignment],
-//
-// ) {
-// }
-
-// Ok.
-/// Does same as `resolution::resolve_static_access` but returns `SymbolId` and the scope ended on,
-/// rather than just the scope.
-pub(crate) fn resolve_static_access_to_sym_id_with_preset(
-    compiler: &mut ScriptCompiler,
-    sp_path_segs: &[SpannedContainer<PathSegment>],
-    starting_scope: AssociatedScopeKind,
-    scope_type: ScopeType,
-    lookup_pref: ScopeLookupPreferenceFlags,
-    opt: StaticAccessOption,
-    interner: &Intern,
-    env: &ResolverEnv,
-) -> Result<Option<SymbolLookupOutput>, PresetErr> {
-    let last_scope = resolve_static_access_ret_preset(
-        compiler,
-        sp_path_segs,
-        starting_scope,
-        scope_type,
-        lookup_pref,
-        opt,
-        interner,
-        env,
-    )?;
-
+// !@
+pub(crate) fn resolve_sym_id_ret_preset() {
     todo!()
 }

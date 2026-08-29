@@ -8,7 +8,7 @@ mod parser_budget;
 mod parser_state;
 
 use crate::lexer::token::{SpannedToken, Token, TokenKind};
-use crate::lookup::scopes::scopes_concepts::{ScopeLookupPattern, ScopeType};
+use crate::lookup::scopes::scopes_concepts::ScopeLookupPattern;
 use crate::parser::ast::ast_concepts::{
     AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractDirective,
     AbstractEnum, AbstractImpl, AbstractMemberAccess, AbstractParam, AbstractStruct,
@@ -27,7 +27,9 @@ use crate::parser::context::ParserContext;
 use crate::parser::evidence::{Evidence, InitialEvidence, SemanticEnv, SemanticSituation};
 use crate::parser::parser_budget::ParserBudget;
 use crate::parser::parser_state::ParserState;
-use crate::semantic::hir::hir_impls::{ComplexConfigMemberMetadata, ConfigMemberMetadataKind};
+use crate::semantic::hir::hir_impls::{
+    ComplexConfigMemberMetadata, ConfigMemberMetadataKind, OverrideConfigMemberMetadata,
+};
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::chrn_config::chrn_perf::ChrnPerfStage;
 use chrn_utils::intern::Intern;
@@ -544,6 +546,7 @@ fn check_import(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token>
     Ok(())
 }
 
+// Field.
 fn parse_typedef(
     ctx: &mut ParserContext,
     is_priv: bool,
@@ -758,7 +761,7 @@ fn parse_nest_sect(
 fn parse_cfg_expr(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
-    mut lookup_pat_opt: Option<ScopeLookupPattern>,
+    lookup_pat_opt: Option<ScopeLookupPattern>,
     // It's only one depth so just reflecting it with one T/F state
     is_root: bool,
     interner: &Intern,
@@ -783,7 +786,6 @@ fn parse_cfg_expr(
     })?;
 
     let (lookup_pat, kind) = handle_cfg_metadata(ctx, budget, lookup_pat_opt, is_root, interner)?;
-    lookup_pat_opt = None;
 
     // Allows for "=>" to notify that
     if ctx.peek_tok() != Token::OCurlyBracket && ctx.peek_tok() != Token::NotSlimArrow {
@@ -844,14 +846,18 @@ fn parse_cfg_expr(
 
         if ctx.peek_ahead(1).tok == Token::Assign {
             // Option parsing.
-            // for "cases = [snake_case]"
+            // for "cases = expr/[exprs]"
             let opt = parse_option_assignment(ctx, budget, interner)?;
             stmts.push(AbstractStmt::OptAssignment(opt));
             // Should this just be earlier? It's own separate earlier if?
         } else if ctx.peek_kind() == TokenKind::Id
-            // "var/nest/override Type {}" can be used so we need to catch those semantic identifiers
-            || matches!(ctx.peek_tok(), Token::Keyword(Keyword::Var)
-                |Token::Keyword(Keyword::Nest) |Token::Keyword(Keyword::Override))
+            || matches!(
+                // "var/nest/override {ident} {}" can be used so we need to catch those semantic identifiers
+                ctx.peek_tok(),
+                Token::Keyword(Keyword::Var)
+                    | Token::Keyword(Keyword::Nest)
+                    | Token::Keyword(Keyword::Override)
+            )
         {
             // for "inner {/*assignments*/}"
             match parse_cfg_expr(ctx, budget, None, false, interner) {
@@ -881,7 +887,6 @@ fn parse_cfg_expr(
         }
     }
 
-    // Might have to separate these, parent and member.
     Ok(AbstractConfig::new(kind, lookup_pat, stmts, cfg_members))
 }
 
@@ -965,7 +970,7 @@ fn handle_cfg_metadata(
         let pat = if let Some(p) = lookup_pat_opt {
             p
         } else {
-            // Only keywords valid for root usage
+            // Override is taken care of at the call-site
             if ctx.peek_tok() == Token::Keyword(Keyword::Var) {
                 ctx.advance_tok();
                 ScopeLookupPattern::OnlyVar
@@ -983,11 +988,22 @@ fn handle_cfg_metadata(
 
         return Ok((pat, AbstractConfigKind::Root(ambig_expr)));
     } else {
-        let pat = if ctx.peek_tok() == Token::Keyword(Keyword::Override) {
+        // Only members look for override because the root uses a special case check for if it's an
+        // override cfg or not. This way was chosen so that the code could stay minimal. May change
+        // since this is not the cleanest greenest all passing code to land.
+        let (pat, meta_kind) = if ctx.peek_tok() == Token::Keyword(Keyword::Override) {
             ctx.advance_tok();
-            ScopeLookupPattern::OnlyIntrinsic
+            let meta = OverrideConfigMemberMetadata::new();
+            (
+                ScopeLookupPattern::OnlyIntrinsic,
+                ConfigMemberMetadataKind::Override(meta),
+            )
         } else {
-            ScopeLookupPattern::NoRestrictions
+            let meta = ComplexConfigMemberMetadata::new();
+            (
+                ScopeLookupPattern::NoRestrictions,
+                ConfigMemberMetadataKind::Complex(meta),
+            )
         };
 
         // If !root
