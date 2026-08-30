@@ -42,6 +42,8 @@ pub(super) enum ConfigMemberError {}
 #[derive(Debug)]
 pub(super) enum ConfigMemberContextKind<'a> {
     // Config member member context
+    // Maybe rename to base? The section discernment no longer exists so maybe remove the "complex"
+    // naming since they are both inside complex to begin with?
     Complex(ConfigMemberComplexContext),
     Override(ConfigMemberOverrideContext<'a>),
 }

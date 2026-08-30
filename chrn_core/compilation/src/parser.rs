@@ -28,7 +28,8 @@ use crate::parser::evidence::{Evidence, InitialEvidence, SemanticEnv, SemanticSi
 use crate::parser::parser_budget::ParserBudget;
 use crate::parser::parser_state::ParserState;
 use crate::semantic::hir::hir_impls::{
-    ComplexConfigMemberMetadata, ConfigMemberMetadataKind, OverrideConfigMemberMetadata,
+    ComplexConfigMemberMetadata, ConfigMemberMetadataKind, ConfigRootMetadataKind,
+    OverrideConfigMemberMetadata,
 };
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::chrn_config::chrn_perf::ChrnPerfStage;
@@ -320,26 +321,31 @@ pub fn parse(
                             break;
                         }
 
-                        // One-time override of what lookup pattern should be assigned to the root
+                        // One-time override of what metadata should be assigned to the root
                         // config expr. This exists to avoid making an entirely different entry
                         // point function, with the same logic as the config members just because
                         // the pattern may be overidden once.
-                        let lookup_pat_opt = match ctx.peek_tok() {
+                        let root_meta_opt = match ctx.peek_tok() {
                             // For type impl
                             Token::Keyword(Keyword::For) => {
                                 ctx.advance_tok();
                                 None
                                 // handle it here?
                             }
+                            // Not entirely sure about this abstraction because if we are in
+                            // override, then we don't use the lookup pattern, otherwise we just use
+                            // the lookup pattern. That means the pattern field itself is mutually
+                            // exclusive, but at the same time encoding that would make future
+                            // changes a bit more painful for no real gain other than correctness
                             Token::Keyword(Keyword::Override) => {
                                 ctx.advance_tok();
-                                Some(ScopeLookupPattern::OnlyIntrinsic)
+                                Some(ConfigRootMetadataKind::Override)
                             }
                             _ => None,
                         };
 
                         if let Ok(abs_cfg) =
-                            parse_cfg_expr(&mut ctx, &budget, lookup_pat_opt, true, interner)
+                            parse_cfg_expr(&mut ctx, &budget, root_meta_opt, true, interner)
                         {
                             let item = Item::Impl(AbstractImpl::Config(abs_cfg));
                             ast_info.push_item(SectionKind::Complex, item);
@@ -761,7 +767,7 @@ fn parse_nest_sect(
 fn parse_cfg_expr(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
-    lookup_pat_opt: Option<ScopeLookupPattern>,
+    root_meta_opt: Option<ConfigRootMetadataKind>,
     // It's only one depth so just reflecting it with one T/F state
     is_root: bool,
     interner: &Intern,
@@ -785,7 +791,7 @@ fn parse_cfg_expr(
         Token::Poison
     })?;
 
-    let (lookup_pat, kind) = handle_cfg_metadata(ctx, budget, lookup_pat_opt, is_root, interner)?;
+    let (lookup_pat, kind) = handle_cfg_metadata(ctx, budget, root_meta_opt, is_root, interner)?;
 
     // Allows for "=>" to notify that
     if ctx.peek_tok() != Token::OCurlyBracket && ctx.peek_tok() != Token::NotSlimArrow {
@@ -960,33 +966,35 @@ fn parse_ambiguous_expr(
 fn handle_cfg_metadata(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
-    lookup_pat_opt: Option<ScopeLookupPattern>,
+    root_meta_opt: Option<ConfigRootMetadataKind>,
     is_root: bool,
     interner: &Intern,
 ) -> Result<(ScopeLookupPattern, AbstractConfigKind), Token> {
-    //TODO: Collapse these
     if is_root {
-        // If we were explicitly given an override then @*)*$)%)#(0000) it takes priority.
-        let pat = if let Some(p) = lookup_pat_opt {
-            p
+        //TODO: Suspicious
+        let meta = if let Some(m) = root_meta_opt {
+            m
         } else {
-            // Override is taken care of at the call-site
-            if ctx.peek_tok() == Token::Keyword(Keyword::Var) {
-                ctx.advance_tok();
-                ScopeLookupPattern::OnlyVar
-            } else if ctx.peek_tok() == Token::Keyword(Keyword::Nest) {
-                ctx.advance_tok();
-                ScopeLookupPattern::OnlyNest
-            } else {
-                ScopeLookupPattern::NamespaceOnly
-            }
+            ConfigRootMetadataKind::Complex
+        };
+
+        // If we were explicitly given an override then @*)*$)%)#(0000) it takes priority.
+        // Override is taken care of at the call-site
+        let pat = if ctx.peek_tok() == Token::Keyword(Keyword::Var) {
+            ctx.advance_tok();
+            ScopeLookupPattern::OnlyVar
+        } else if ctx.peek_tok() == Token::Keyword(Keyword::Nest) {
+            ctx.advance_tok();
+            ScopeLookupPattern::OnlyNest
+        } else {
+            ScopeLookupPattern::NamespaceOnly
         };
 
         // TEST: Generically parsing as a segment so that semantically the resolver can
         // decide to resolve as ty or expr
         let ambig_expr = parse_ambiguous_expr(ctx, budget, interner)?;
 
-        return Ok((pat, AbstractConfigKind::Root(ambig_expr)));
+        return Ok((pat, AbstractConfigKind::Root(ambig_expr, meta)));
     } else {
         // Only members look for override because the root uses a special case check for if it's an
         // override cfg or not. This way was chosen so that the code could stay minimal. May change
@@ -995,7 +1003,7 @@ fn handle_cfg_metadata(
             ctx.advance_tok();
             let meta = OverrideConfigMemberMetadata::new();
             (
-                ScopeLookupPattern::OnlyIntrinsic,
+                ScopeLookupPattern::NamespaceOnly,
                 ConfigMemberMetadataKind::Override(meta),
             )
         } else {
@@ -1022,10 +1030,7 @@ fn handle_cfg_metadata(
         )?;
 
         let sp_interned_id = SpannedContainer::new(name_id, name_span);
-        let kind = AbstractConfigKind::Member(
-            sp_interned_id,
-            ConfigMemberMetadataKind::Complex(ComplexConfigMemberMetadata::new()),
-        );
+        let kind = AbstractConfigKind::Member(sp_interned_id, meta_kind);
 
         return Ok((pat, kind));
     }

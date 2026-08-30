@@ -10,7 +10,10 @@ use chrn_utils::{
 };
 
 use crate::{
-    lookup::scopes::scopes_concepts::{Scope, ScopeInfo, ScopeLookupPattern, ScopeType},
+    lookup::scopes::{
+        self,
+        scopes_concepts::{Scope, ScopeInfo, ScopeLookupPattern, ScopeType},
+    },
     parser::ast::ast_concepts::{
         AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractEnum,
         AbstractImpl, AbstractStruct, AbstractTypeDef, AbstractVar, Item,
@@ -153,12 +156,11 @@ impl NamespaceResolver<'_> {
                 ScopeLookupPattern::NamespaceOnly
                     | ScopeLookupPattern::OnlyVar
                     | ScopeLookupPattern::OnlyNest
-                    | ScopeLookupPattern::OnlyIntrinsic
             ),
             "Either config of `abs_cfg` was done wrong or a core language change did not update this assertion.\nExpected `ScopeLookupPattern::NoRestrictions/OnlyVar`, found {:?}",
             abs_cfg.lookup_pat
         );
-        debug_assert!(matches!(abs_cfg.kind, AbstractConfigKind::Root(_)));
+        debug_assert!(matches!(abs_cfg.kind, AbstractConfigKind::Root(_, _)));
         debug_assert!(matches!(scope_type, ScopeType::Complex));
 
         // Pushing the scope loads all symbols needed by override

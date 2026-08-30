@@ -56,8 +56,6 @@ pub fn find_type_id(
     );
     // Loops over all allowed scopes and checks their individual namespaces
 
-    let mut default_return: Option<TypeId> = None;
-
     for allowed_scope_type in accessible_scopes.iter().copied() {
         // In this scenario the scope may or may not exist since this could be used from
         // another module
@@ -90,7 +88,7 @@ pub fn find_type_id(
         }
     }
 
-    default_return
+    None
 }
 
 /// Searches the given module for the given `ScopeType` by iterating through it's scopes
@@ -111,12 +109,78 @@ pub fn find_scope_in_mod(
     None
 }
 
+//TEST:
+/// Targets only intrinsic scopes when searching.
+pub fn find_sym_id_intrinsic(
+    compiler: &ScriptCompiler,
+    associated_scope: AssociatedScopeKind,
+    target_name_id: InternedId,
+    scope_type: ScopeType,
+) -> Option<SymbolLookupOutput> {
+    // Is this ok?
+    let lookup_pat = ScopeLookupPattern::NamespaceOnly;
+
+    // Avoiding vector allocations right now so it can just use a pointer offset instead based off
+    // of hard-coded truths but will probably just, not do that.
+    match associated_scope {
+        AssociatedScopeKind::Module(mod_id) => {
+            let current_mod = &compiler.mods[mod_id];
+            let accessible_scopes = compute_accessible_scopes(
+                lookup_pat,
+                scope_type.accessible_scopes(),
+                current_mod.region_id,
+            );
+
+            for allowed_scope_type in accessible_scopes {
+                if let Some(scope_info) = find_scope_in_mod(compiler, *allowed_scope_type, mod_id) {
+                    //TODO: Make sure this works as intended
+                    if let Some(intrinsic_scope_id) = scope_info.scope.intrinsic_scope {
+                        let intrinsic_scope = &compiler.scopes[intrinsic_scope_id].scope;
+
+                        if scope_type == *allowed_scope_type {
+                            if let Some(sym_id) = intrinsic_scope
+                                .table
+                                .interned_to_sym
+                                .get(&target_name_id)
+                                .copied()
+                            {
+                                return Some(SymbolLookupOutput::new(
+                                    sym_id,
+                                    scope_info.scope.scope_id,
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // If no preferences are matched, returns said default, returning `None` if no default
+            // was found
+            return None;
+        }
+        AssociatedScopeKind::Scope(scope_id) => {
+            let scope = &compiler.scopes[scope_id].scope;
+            if let Some(intrinsic_scope_id) = scope.intrinsic_scope {
+                let intrinsic_scope = &compiler.scopes[intrinsic_scope_id].scope;
+
+                if let Some(sym_id) = intrinsic_scope.table.interned_to_sym.get(&target_name_id) {
+                    return Some(SymbolLookupOutput::new(*sym_id, intrinsic_scope_id));
+                }
+            }
+        }
+    }
+
+    None
+}
+
 /// - compiler: The environment to seaerch in
 /// - associated_scope: The type of scope to search which could differ depending on if the scope
 /// belongs to a module, symbol, etc.
 /// - target_name_id: The identifier to search for in the given scope
 /// - scope_type: The type of scope this search was started from
 /// - lookup_pat: How much access the lookup should have
+/// - lookup_pref: Symbols marked as preferred are prioritized as the return type. If not found,
+/// returns the last symbol under the target identifier.
 ///
 /// - On `Some`: Returns Symbol found and the `ScopeId` from the scope it was found in
 /// - Returns `None` when no symbol with the target identifier was found under the constraints
@@ -219,9 +283,6 @@ pub fn find_sym_id(
                 return Some(SymbolLookupOutput::new(*sym_id, scope_id));
             }
 
-            //TODO: Make sure this works as intended
-            //Pretty sure it does work since the java namespace was found, which is only available
-            //intrinsically.
             if let Some(intrinsic_scope_id) = scope.intrinsic_scope {
                 let intrinsic_scope = &compiler.scopes[intrinsic_scope_id].scope;
 
@@ -440,7 +501,5 @@ fn compute_accessible_scopes<'a>(
         ScopeLookupPattern::NoRestrictions | ScopeLookupPattern::NamespaceOnly => accessible_scopes,
         ScopeLookupPattern::OnlyVar => &SCOPE_VAR_ONLY,
         ScopeLookupPattern::OnlyNest => &SCOPE_NEST_ONLY,
-        // This is not used yet and may not exist
-        ScopeLookupPattern::OnlyIntrinsic => todo!("Hiii"),
     }
 }

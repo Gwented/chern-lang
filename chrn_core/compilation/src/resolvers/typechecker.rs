@@ -10,7 +10,7 @@ use chrn_utils::{
 };
 
 use crate::{
-    lookup::scopes::scopes_concepts::ScopeType,
+    lookup::scopes::scopes_concepts::{AssociatedScopeKind, ScopeType},
     script_compiler::ScriptCompiler,
     semantic::hir::{
         hir_concepts::{Type, TypeInfo},
@@ -51,9 +51,16 @@ pub fn check_cfg_root(compiler: &ScriptCompiler, sym_id: SymbolId) -> bool {
                 Type::Deferred(_) => unreachable!(),
             }
         }
-        // Only override section symbols can access a namespace in it's config root.
-        SymbolKind::Namespace => true,
-        SymbolKind::Variable(_) | SymbolKind::Directive(_) | SymbolKind::ExternType => false,
+        // Can only accept scope, needs to prevent "for module {}" from being possible as a root
+        SymbolKind::Namespace
+            if matches!(sym.associated_scope, Some(AssociatedScopeKind::Scope(_))) =>
+        {
+            true
+        }
+        SymbolKind::Namespace
+        | SymbolKind::Variable(_)
+        | SymbolKind::Directive(_)
+        | SymbolKind::ExternType => false,
     }
 }
 

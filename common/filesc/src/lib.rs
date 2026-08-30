@@ -86,7 +86,7 @@ pub fn write_bytes_front_stream(
 /// `tmp_file_name_suffix` is appended if given, otherwise the file name is just the hash.
 pub fn create_unique_file(
     path: &mut PathBuf,
-    tmp_file_name_suffix: Option<&str>,
+    tmp_file_name_prefix: Option<&str>,
 ) -> Result<File, io::Error> {
     // If it fails a certain amount of times attempts are stopped
     let mut created_temp_name = false;
@@ -95,12 +95,15 @@ pub fn create_unique_file(
 
     for _ in 0..MAX_TEMP_FILE_CREATION_ATTEMPTS {
         ptr::hash(&hasher, &mut hasher);
-        let hashed_name = hasher.finish();
+        let hash = hasher.finish();
 
         // Extra allocation but worth it for clarity
+        //
+        // Not sure about the `.tmp` here because when thinking of the term tmp, it sounds like a
+        // file that will be removed on next boot, cleaned routinely, etsy.
         path.push(format!(
-            "{hashed_name}{}",
-            tmp_file_name_suffix.unwrap_or_default()
+            "{}{hash}.part",
+            tmp_file_name_prefix.unwrap_or_default()
         ));
 
         // Checks if generated name exists before trying

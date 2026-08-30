@@ -52,8 +52,8 @@ fn parse_text_with_diags(text: &str) -> (AstInfo, Vec<SourceDiagnostic>, Intern)
 
 fn cfg_name_id(cfg: &AbstractConfig) -> InternedId {
     match &cfg.kind {
-        AbstractConfigKind::Root(path) => match &path[0].inner {
-            PathSegment::Ident(id) => *id,
+        AbstractConfigKind::Root(path, _) => match &path[0].inner {
+            PathSegment::Ident(id) => InternedId::new(id.id),
             _ => panic!("expected Var type expr in Root config"),
         },
         AbstractConfigKind::Member(sp, _) => sp.inner,
@@ -62,7 +62,7 @@ fn cfg_name_id(cfg: &AbstractConfig) -> InternedId {
 
 fn cfg_name_span(cfg: &AbstractConfig) -> SourceSpan {
     match &cfg.kind {
-        AbstractConfigKind::Root(path) => path[0].span,
+        AbstractConfigKind::Root(path, _) => path[0].span,
         AbstractConfigKind::Member(name, _) => name.span,
     }
 }
@@ -571,7 +571,7 @@ fn parse_complex_config_root() {
     assert_eq!(cfg_name_span(cfg).end, 22);
 
     assert_eq!(interner.search(cfg_name_id(cfg)), "MyConfig");
-    assert!(matches!(cfg.kind, AbstractConfigKind::Root(_)));
+    assert!(matches!(cfg.kind, AbstractConfigKind::Root(_, _)));
     assert_eq!(cfg.abs_stmts.len(), 1);
     assert!(cfg.cfg_members.is_empty());
 
@@ -602,7 +602,7 @@ fn parse_complex_config_var_prefix() {
 
     let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
     assert_eq!(interner.search(cfg_name_id(cfg)), "MyConfig");
-    assert!(matches!(cfg.kind, AbstractConfigKind::Root(_)));
+    assert!(matches!(cfg.kind, AbstractConfigKind::Root(_, _)));
     // The lookup pattern was changed by the `var` keyword — we can verify it was consumed
     // correctly because the span starts at the name, not at `var`.
     // `var` is at bytes 14..17, then space, then "MyConfig" spans 18..26

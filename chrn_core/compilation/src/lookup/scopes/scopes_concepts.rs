@@ -61,11 +61,12 @@ pub static SCOPE_NEST_ENCODED_SCOPES: [ScopeType; 5] = [
 
 // Doesn't have itself because complex assigns properties for types, nothing more.
 /// Elements ordered to fit the needs of scope `complex`
-pub static SCOPE_COMPLEX_ENCODED_SCOPES: [ScopeType; 5] = [
+pub static SCOPE_COMPLEX_ENCODED_SCOPES: [ScopeType; 6] = [
     ScopeType::Var,
     ScopeType::Nest,
     ScopeType::Neutral,
     ScopeType::Compiler,
+    ScopeType::Complex,
     ScopeType::Core,
 ];
 
@@ -236,7 +237,6 @@ pub enum ScopeLookupPattern {
     /// Lookup that only allows `var` to be searched and enforces it's the only section
     /// that can be searched
     OnlyVar,
-    OnlyIntrinsic,
 }
 
 // TODO: Formattable
@@ -262,6 +262,12 @@ pub enum AssociatedScopeKind {
     Module(ModuleId),
     /// Meaning the scope is just attached to a symbol's namespace
     Scope(ScopeId),
+}
+
+impl AssociatedScopeKind {
+    pub fn is_module(self) -> bool {
+        matches!(self, AssociatedScopeKind::Module(_))
+    }
 }
 
 impl ChrnClassifiable for AssociatedScopeKind {

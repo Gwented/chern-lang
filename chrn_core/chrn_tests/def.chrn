@@ -2,7 +2,7 @@ export let READ = 0b0
 export let WRITE = 0b1
 
 // import "../chrn_core/chrn_tests/nothing"
-import "../chrn_core/chrn_tests/other.chrn"
+// import "../chrn_core/chrn_tests/other.chrn"
 // import "../chrn_core/chrn_tests/def.chrn"
 // import "../chrn_core/chrn_tests/examples/def.chrn" as warn
 // import "../chrn_core/chrn_tests/core.chrn"
@@ -48,9 +48,12 @@ nest->
 // PROPS TEST START
 complex->
 
-for State {
+/*for State {
     idents = 3
-    stating {}
+
+    override types {}
+
+    // stating {}
     /*override types {
         C {
             // Ok
@@ -65,7 +68,9 @@ for State {
             }
         }
     }*/
-}
+}*/
+
+override JAVA {}
 
 @end
 // PROPS TEST END

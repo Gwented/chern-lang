@@ -362,7 +362,6 @@ fn exec_embed(
             eprintln!("{rendered}");
             return Err(err_msg);
         } else if reporter.diag_summary().has_warn() {
-            // Just printing if any non-error diagnostics if any, still continues
             println!("{rendered}");
         }
 
@@ -454,7 +453,7 @@ fn exec_embed(
     let res = if embed_cmd.in_memory {
         filesc::write_bytes_front(&dest_path, &embed_portion)
     } else {
-        filesc::write_bytes_front_stream(&dest_path, &embed_portion, "chrnstream".into())
+        filesc::write_bytes_front_stream(&dest_path, &embed_portion, "chrnstream-".into())
     };
 
     match res {

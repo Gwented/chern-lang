@@ -21,8 +21,8 @@ use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::chrn_config::chrn_perf::ChrnPerfStage;
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::id_types::{
-    AstId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, ScopeId, SymbolId,
-    TypeId, ValueId, VariableId,
+    AstId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, ModuleId, ScopeId,
+    SymbolId, TypeId, ValueId, VariableId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
@@ -59,8 +59,9 @@ use crate::semantic::hir::hir_exprs::{
     ExprHir, Param, PossibleMember, ResolvedExpr, ResolvedExprMetadata,
 };
 use crate::semantic::hir::hir_impls::{
-    ConfigMember, ConfigMemberCommon, ConfigMemberMetadataKind, ImplHirKind, ImplMemberKind,
-    OptionAssignmentMember, OptionAssignmentRoot, OverrideConfigMemberMetadata,
+    ConfigMember, ConfigMemberCommon, ConfigMemberMetadataKind, ConfigRootMetadataKind,
+    ImplHirKind, ImplMemberKind, OptionAssignmentMember, OptionAssignmentRoot,
+    OverrideConfigMemberMetadata,
 };
 use crate::semantic::hir::hir_symbols::{
     Symbol, SymbolKind, SymbolOrigin, VarDef, VariableMetadata, VariableState,
@@ -520,7 +521,7 @@ impl<'res> TypeResolver<'res> {
         let scope_type = self.compiler.impls[parent_impl_id].scope_origin;
         let lookup_pat = abs_cfg_root.lookup_pat;
 
-        let AbstractConfigKind::Root(sp_path_segs) = &abs_cfg_root.kind else {
+        let AbstractConfigKind::Root(sp_path_segs, root_meta) = &abs_cfg_root.kind else {
             unreachable!()
         };
 
@@ -540,17 +541,21 @@ impl<'res> TypeResolver<'res> {
 
         //TODO: We need to get the scoping, given the pathing, and then search for the symbol id in
         //the given scope.
-        let (lookup_pref, static_access_opt) = if lookup_pat == ScopeLookupPattern::OnlyIntrinsic {
-            // Not that important, but since intrinsic only points to namespaces only (as of right
-            // now at least) this is done
-            let pref =
-                ScopeLookupPreferenceFlags::new(ScopeLookupPreferenceFlags::NAMESPACE.into());
-            (pref, StaticAccessOption::None)
-        } else {
-            let pref = ScopeLookupPreferenceFlags::new(
-                (ScopeLookupPreferenceFlags::TYPE | ScopeLookupPreferenceFlags::NAMESPACE).into(),
-            );
-            (pref, StaticAccessOption::None)
+        let (lookup_pref, static_access_opt) = match root_meta {
+            ConfigRootMetadataKind::Complex => {
+                let pref = ScopeLookupPreferenceFlags::new(
+                    (ScopeLookupPreferenceFlags::TYPE | ScopeLookupPreferenceFlags::NAMESPACE)
+                        .into(),
+                );
+                (pref, StaticAccessOption::None)
+            }
+            ConfigRootMetadataKind::Override => {
+                // Not that important, but since intrinsic only points to namespaces only (as of right
+                // now at least) this is done
+                let pref =
+                    ScopeLookupPreferenceFlags::new(ScopeLookupPreferenceFlags::NAMESPACE.into());
+                (pref, StaticAccessOption::None)
+            }
         };
 
         //TODO: Preset err version
@@ -591,14 +596,24 @@ impl<'res> TypeResolver<'res> {
         // Could be generic so can't go by scopes::find_sym_id
         let sym_id_opt = match &last_seg.inner {
             PathSegment::Ident(interned_id) => {
-                match scopes_helpers::find_sym_id(
-                    self.compiler,
-                    last_scope,
-                    SpannedContainer::new(*interned_id, last_seg.span),
-                    scope_type,
-                    lookup_pat,
-                    lookup_pref,
-                ) {
+                let res = match root_meta {
+                    ConfigRootMetadataKind::Complex => scopes_helpers::find_sym_id(
+                        self.compiler,
+                        last_scope,
+                        SpannedContainer::new(*interned_id, last_seg.span),
+                        scope_type,
+                        lookup_pat,
+                        lookup_pref,
+                    ),
+                    ConfigRootMetadataKind::Override => scopes_helpers::find_sym_id_intrinsic(
+                        self.compiler,
+                        last_scope,
+                        SpannedContainer::new(*interned_id, last_seg.span),
+                        scope_type,
+                    ),
+                };
+
+                match res {
                     Ok(out) => out.found_sym_id.into(),
                     Err(preset_err) => {
                         preset_reporter::report_preset(
@@ -723,9 +738,7 @@ impl<'res> TypeResolver<'res> {
                 env.region.path_id,
             )
             .add_annotation(last_seg.span, AnnotationKind::Primary, None)
-            .add_note(
-                "Only user defined types and namespaces are valid config roots in `override`",
-            );
+            .add_note("Only user defined types and intrinsic namespaces are valid config roots");
             self.summary.push_diag(builder.build());
             return;
         };
@@ -767,97 +780,69 @@ impl<'res> TypeResolver<'res> {
                 unreachable!()
             };
 
-            match meta_kind {
+            //NOTE: Do we diverge into seperate methods here? We need a guarantee that the config
+            //members have a type id, which may or may not be the case for complex.
+            let cfg_memb_id = match meta_kind {
                 ConfigMemberMetadataKind::Complex(meta) => {
-                    // self.lookup_cfg_memb_complex(type_id, sp_memb_name_id);
-                    todo!()
-                }
-                ConfigMemberMetadataKind::Override(meta) => {
-                    // Translating
-                    let ident = SpannedContainer::new(
-                        PathSegment::Ident(sp_memb_name_id.inner),
-                        sp_memb_name_id.span,
-                    );
-                    let sym_id = match self.lookup_cfg_memb_override(&[ident], initial_scope, env) {
-                        Ok(sym_id) => sym_id,
-                        Err(preset_err) => {
-                            preset_reporter::report_preset(
-                                self.compiler,
-                                &mut self.summary,
-                                preset_err,
-                                env.region,
-                                self.cfg,
-                                self.interner,
-                            );
-                            continue;
+                    let parent_type_id = match self.compiler.get_type_id_from_sym_id(found_sym_id) {
+                        Some(t_id) => t_id,
+                        None => {
+                            // Can override reach this?
+                            todo!("No parent")
                         }
                     };
-                    todo!("Hi")
-                }
-            }
 
-            seen_cfg_idents.push(sp_memb_name_id.clone());
-            seen_cfg_len += 1;
+                    let memb_id = match member_lookup::lookup_member(
+                        self.compiler,
+                        parent_type_id,
+                        //TODO: CHANGE THIS
+                        sp_memb_name_id.inner,
+                        MemberLookupPattern::NoRestrictions,
+                    ) {
+                        // These are split so that the theoretical ok and err paths are able to reduce
+                        // boilerplate where needed
+                        MemberLookupResult::Found(memb_id) => memb_id,
+                        lookup_res => {
+                            // In case the lookup error points to an issue with the actual symbol we found
+                            // rather than the member not existing or some non-terminal lookup error
+                            //
+                            // This is done because the validity of the symbol isn't checked before we
+                            // actually lookup it's members
+                            let mut should_break = false;
 
-            // This member id is the member id that the member information in the specific config
-            // being looked at has access to.
-            //
-            // This is **NOT** used beyond being assigned as the parent origin, for the `ConfigDefMember`
-            // that will be created inside the recursive resolution method.
-            // let scope = &self.compiler.scopes[ScopeId::new(7)].scope;
-
-            todo!("Lookup pattern based member or namespace lookup");
-
-            let memb_id = match member_lookup::lookup_member(
-                self.compiler,
-                todo!(),
-                //TODO: CHANGE THIS
-                sp_memb_name_id.inner,
-                MemberLookupPattern::NoRestrictions,
-            ) {
-                // These are split so that the theoretical ok and err paths are able to reduce
-                // boilerplate where needed
-                MemberLookupResult::Found(memb_id) => memb_id,
-                lookup_res => {
-                    // In case the lookup error points to an issue with the actual symbol we found
-                    // rather than the member not existing or some non-terminal lookup error
-                    //
-                    // This is done because the validity of the symbol isn't checked before we
-                    // actually lookup it's members
-                    let mut should_break = false;
-
-                    let src_diag = match lookup_res {
-                        MemberLookupResult::ImpossibleTypeMemberAccess(type_id) => {
-                            should_break = true;
                             //FIX: This has odd phrasing and pointers
                             // If we get a variable, this is matched, but the error is more so, you
                             // cannot use a variable in config, rather than the member
                             // access itself
-                            let decl_span = self.compiler.get_span_from_type_id(todo!()).expect(
+                            let src_diag = match lookup_res {
+                                MemberLookupResult::ImpossibleTypeMemberAccess(type_id) => {
+                                    should_break = true;
+                                    let decl_span = self.compiler.get_span_from_type_id(type_id).expect(
                                 "Should have a span since it has members and was searched for",
                             );
 
-                            //FIX:
-                            let found_type_name_id = self
-                                .compiler
-                                .get_name_id_from_type_id(type_id)
-                                .expect("NOT DONE YET");
-                            let found_name = self.interner.search(found_type_name_id);
+                                    //FIX:
+                                    let found_type_name_id = self
+                                        .compiler
+                                        .get_name_id_from_type_id(type_id)
+                                        .expect("NOT DONE YET");
+                                    let found_name = self.interner.search(found_type_name_id);
 
-                            let preset_err = PresetErr::Lookup(
-                                LookupError::ImpossibleTypeMemberAccess(SpannedContainer::new(
-                                    Type::to_fmt(&self.compiler.types, type_id),
-                                    decl_span,
-                                )),
-                            );
+                                    let preset_err =
+                                        PresetErr::Lookup(LookupError::ImpossibleTypeMemberAccess(
+                                            SpannedContainer::new(
+                                                Type::to_fmt(&self.compiler.types, type_id),
+                                                decl_span,
+                                            ),
+                                        ));
 
-                            // 4th paste. 4th paste.
-                            let spans: Vec<SourceSpan> =
-                                sp_path_segs.iter().map(|s| s.span).collect();
-                            let sp_path_span = source_span::merge_spans(&spans)
-                                .expect("Path segments require at least one span");
+                                    // 4th paste. 4th paste.
+                                    let spans: Vec<SourceSpan> =
+                                        sp_path_segs.iter().map(|s| s.span).collect();
+                                    let sp_path_span = source_span::merge_spans(&spans)
+                                        .expect("Path segments require at least one span");
 
-                            preset_reporter::create_diag_builder_preset(
+                                    preset_reporter::create_diag_builder_preset(
                                 &self.compiler,
                                 preset_err,
                                 env.region,
@@ -876,110 +861,174 @@ impl<'res> TypeResolver<'res> {
                             )
                             .add_help(format!("If this was meant to reference a `var` defined variable, prefix with \"var {found_name}\""))
                             .build()
-                        }
-                        MemberLookupResult::MemberNotFoundInType(type_id) => {
-                            let decl_span = self
+                                }
+                                MemberLookupResult::MemberNotFoundInType(type_id) => {
+                                    let decl_span = self
                                 .compiler
                                 .get_span_from_type_id(type_id)
                                 .expect("Should have a span since it has members and was searched");
-                            let fmtted_ty = Type::to_fmt(&self.compiler.types, type_id);
+                                    let fmtted_ty = Type::to_fmt(&self.compiler.types, type_id);
 
-                            let found_type = &self.compiler.types[type_id];
-                            //FIX:
-                            let found_type_name_id = self
-                                .compiler
-                                .get_name_id_from_type_id(type_id)
-                                .expect("NOT DONE YET");
+                                    let found_type = &self.compiler.types[type_id];
+                                    //FIX:
+                                    let found_type_name_id = self
+                                        .compiler
+                                        .get_name_id_from_type_id(type_id)
+                                        .expect("NOT DONE YET");
 
-                            let spans: Vec<SourceSpan> =
-                                sp_path_segs.iter().map(|s| s.span).collect();
-                            let sp_path_span = source_span::merge_spans(&spans)
-                                .expect("Path segments require at least one span");
+                                    let spans: Vec<SourceSpan> =
+                                        sp_path_segs.iter().map(|s| s.span).collect();
+                                    let sp_path_span = source_span::merge_spans(&spans)
+                                        .expect("Path segments require at least one span");
 
-                            // Needs to be done otherwise typedefs, given "x: State" will emit the
-                            // type as `x` rather than `State`
-                            // let name_id =
-                            //     if abs_cfg_root.lookup_pat == ScopeLookupPattern::NamespaceOnly {
-                            //         abs_cfg_root.name_id
-                            //     } else {
-                            //         // TODO: Needs change
-                            //         abs_cfg_root.name_id
-                            //     };
+                                    // Needs to be done otherwise typedefs, given "x: State" will emit the
+                                    // type as `x` rather than `State`
+                                    // let name_id =
+                                    //     if abs_cfg_root.lookup_pat == ScopeLookupPattern::NamespaceOnly {
+                                    //         abs_cfg_root.name_id
+                                    //     } else {
+                                    //         // TODO: Needs change
+                                    //         abs_cfg_root.name_id
+                                    //     };
 
-                            let preset_err = PresetErr::Lookup(LookupError::MemberNotFound {
-                                searched_type_id: type_id,
-                                sp_searched_type_name_id: SpannedContainer::new(
-                                    found_type_name_id,
-                                    sp_path_span,
-                                ),
-                                not_found_name_id: sp_memb_name_id.inner,
-                            });
+                                    let preset_err =
+                                        PresetErr::Lookup(LookupError::MemberNotFound {
+                                            searched_type_id: type_id,
+                                            sp_searched_type_name_id: SpannedContainer::new(
+                                                found_type_name_id,
+                                                sp_path_span,
+                                            ),
+                                            not_found_name_id: sp_memb_name_id.inner,
+                                        });
 
-                            preset_reporter::create_diag_builder_preset(
-                                &self.compiler,
+                                    preset_reporter::create_diag_builder_preset(
+                                        &self.compiler,
+                                        preset_err,
+                                        env.region,
+                                        self.cfg,
+                                        self.interner,
+                                    )
+                                    .add_annotation(
+                                        decl_span,
+                                        AnnotationKind::Secondary,
+                                        format!("{} defined here", fmtted_ty).into(),
+                                    )
+                                    .add_annotation(
+                                        sp_memb_name_id.span,
+                                        AnnotationKind::Secondary,
+                                        "Searched for this member".to_string().into(),
+                                    )
+                                    .build()
+                                }
+                                // TODO: This is reached and should probably result in continue since if
+                                // it's unknown that means a previous stage reported it more likely than
+                                // not. (Its 100%)
+                                // Um. When is this case met?
+                                MemberLookupResult::Unknown(type_id) => {
+                                    // let var = self.compiler.get_var(found_sym_id);
+                                    // let name = self.interner.search(var.name_id);
+
+                                    // dbg!(&self.compiler.types[var.type_id ]);
+                                    todo!("RUST_BACKTRACE=1");
+                                }
+                                MemberLookupResult::Found(_) => unreachable!(),
+                            };
+
+                            self.summary.push_diag(src_diag);
+
+                            if should_break {
+                                break;
+                            }
+
+                            continue;
+                        }
+                    };
+
+                    // This member id is the member id that the member information in the specific config
+                    // being looked at has access to.
+                    //
+                    // This is **NOT** used beyond being assigned as the parent origin, for the `ConfigDefMember`
+                    // that will be created inside the recursive resolution method.
+                    // let scope = &self.compiler.scopes[ScopeId::new(7)].scope;
+
+                    let ctx = ConfigMemberComplexContext::new(parent_type_id);
+                    self.resolve_cfg_member(
+                        parent_impl_id,
+                        // The type expr is derivative of path segments which may or may not be a valid type
+                        // expr hence this is using last segment
+                        last_seg.span,
+                        &ConfigMemberContextKind::Complex(ctx),
+                        // sp_path_segs,
+                        // &mut cfg_dfs,
+                        &mut seen_cfg_idents,
+                        // NOTE: Opt ident tracker
+                        ident_tracker,
+                        memb_id,
+                        abs_cfg_memb,
+                        scope_type,
+                        1,
+                        env,
+                    )
+
+                    // todo!("Membering remembering")
+                }
+                ConfigMemberMetadataKind::Override(meta) => {
+                    // Translating
+                    let ident = SpannedContainer::new(
+                        PathSegment::Ident(sp_memb_name_id.inner),
+                        sp_memb_name_id.span,
+                    );
+                    // Checked wrapper?
+                    //
+                    // Initial or last scope?
+                    todo!("HIIIIIIIIIIIIi");
+                    let sym_id = match self.lookup_cfg_memb_override(&[ident], initial_scope, env) {
+                        Ok(sym_id) => sym_id,
+                        Err(preset_err) => {
+                            preset_reporter::report_preset(
+                                self.compiler,
+                                &mut self.summary,
                                 preset_err,
                                 env.region,
                                 self.cfg,
                                 self.interner,
-                            )
-                            .add_annotation(
-                                decl_span,
-                                AnnotationKind::Secondary,
-                                format!("{} defined here", fmtted_ty).into(),
-                            )
-                            .add_annotation(
-                                sp_memb_name_id.span,
-                                AnnotationKind::Secondary,
-                                "Searched for this member".to_string().into(),
-                            )
-                            .build()
+                            );
+                            continue;
                         }
-                        // TODO: This is reached and should probably result in continue since if
-                        // it's unknown that means a previous stage reported it more likely than
-                        // not. (Its 100%)
-                        // Um. When is this case met?
-                        MemberLookupResult::Unknown(type_id) => {
-                            // let var = self.compiler.get_var(found_sym_id);
-                            // let name = self.interner.search(var.name_id);
-
-                            // dbg!(&self.compiler.types[var.type_id ]);
-                            todo!("RUST_BACKTRACE=1");
-                        }
-                        MemberLookupResult::Found(_) => unreachable!(),
                     };
-
-                    self.summary.push_diag(src_diag);
-
-                    if should_break {
-                        break;
-                    }
-
-                    continue;
+                    todo!("Hi")
                 }
             };
 
-            let override_ctx = ConfigMemberComplexContext::new(todo!());
-            let ctx = ConfigMemberContextKind::Complex(override_ctx);
+            seen_cfg_idents.push(sp_memb_name_id.clone());
+            seen_cfg_len += 1;
 
-            let cfg_member_id = self.resolve_cfg_member(
-                parent_impl_id,
-                // The type expr is derivative of path segments which may or may not be a valid type
-                // expr hence this is using last segment
-                last_seg.span,
-                &ctx,
-                // sp_path_segs,
-                // &mut cfg_dfs,
-                &mut seen_cfg_idents,
-                // NOTE: Opt ident tracker
-                ident_tracker,
-                memb_id,
-                abs_cfg_memb,
-                scope_type,
-                1,
-                env,
-            );
+            // This member id is the member id that the member information in the specific config
+            // being looked at has access to.
+            //
+            // This is **NOT** used beyond being assigned as the parent origin, for the `ConfigDefMember`
+            // that will be created inside the recursive resolution method.
+            // let scope = &self.compiler.scopes[ScopeId::new(7)].scope;
 
-            cfg_members.push(cfg_member_id);
+            // let cfg_member_id = self.resolve_cfg_member(
+            //     parent_impl_id,
+            //     // The type expr is derivative of path segments which may or may not be a valid type
+            //     // expr hence this is using last segment
+            //     last_seg.span,
+            //     &ctx,
+            //     // sp_path_segs,
+            //     // &mut cfg_dfs,
+            //     &mut seen_cfg_idents,
+            //     // NOTE: Opt ident tracker
+            //     ident_tracker,
+            //     memb_id,
+            //     abs_cfg_memb,
+            //     scope_type,
+            //     1,
+            //     env,
+            // );
+
+            cfg_members.push(cfg_memb_id);
             seen_cfg_idents.truncate(seen_cfg_len);
         }
 
@@ -1043,13 +1092,11 @@ impl<'res> TypeResolver<'res> {
             ScopeLookupPattern::NamespaceOnly
                 | ScopeLookupPattern::OnlyVar
                 | ScopeLookupPattern::OnlyNest
-                | ScopeLookupPattern::OnlyIntrinsic
         ));
 
         cfg_root.linked_sym_id = Some(found_sym_id);
         cfg_root.memb_stmts = memb_stmts;
         cfg_root.common.cfg_members = cfg_members;
-        todo!()
     }
 
     // May be worth landing being greening as a general lookup cfg namespace function
@@ -1066,7 +1113,7 @@ impl<'res> TypeResolver<'res> {
         let scope_type = ScopeType::Complex;
         let lookup_pref =
             ScopeLookupPreferenceFlags::new(ScopeLookupPreferenceFlags::NAMESPACE.into());
-        let lookup_pat = ScopeLookupPattern::OnlyIntrinsic;
+        let lookup_pat = ScopeLookupPattern::NamespaceOnly;
 
         let last_scope = resolution_helpers::resolve_static_access_ret_preset(
             self.compiler,
@@ -1086,7 +1133,7 @@ impl<'res> TypeResolver<'res> {
             PathSegment::Ident(interned_id) => {
                 //TODO: preset err for this maybe
                 // Second request for a ret preset version
-                scopes_helpers::find_sym_id(
+                match scopes_helpers::find_sym_id(
                     self.compiler,
                     last_scope,
                     SpannedContainer::new(*interned_id, last_seg.span),
@@ -1095,6 +1142,30 @@ impl<'res> TypeResolver<'res> {
                     lookup_pref,
                 )
                 .map(|out| out.found_sym_id)
+                {
+                    // This looks suspicious..
+                    Ok(sym_id) => {
+                        if !typechecker::check_cfg_memb_override(self.compiler, sym_id) {
+                            let classified = SymbolKind::to_fmt(&self.compiler, sym_id);
+                            let core_msg = format!(
+                                "Cannot use type `{classified}` as an override config member"
+                            );
+
+                            let builder = SourceDiagnostic::builder(
+                                ErrorCode::ConfigDeclErr.into(),
+                                DiagnosticLevel::Error,
+                                core_msg,
+                                env.region.path_id,
+                            )
+                            .add_annotation(last_seg.span, AnnotationKind::Primary, None)
+                            .add_note("Must be an intrinsic");
+                            Err(PresetErr::General(builder))
+                        } else {
+                            Ok(sym_id)
+                        }
+                    }
+                    Err(preset_err) => Err(preset_err),
+                }
             }
             PathSegment::Generic(_) => {
                 let builder = SourceDiagnostic::builder(
@@ -1104,7 +1175,7 @@ impl<'res> TypeResolver<'res> {
                     env.region.path_id,
                 )
                 .add_annotation(last_seg.span, AnnotationKind::Primary, None);
-                Err(PresetErr::General(builder))
+                return Err(PresetErr::General(builder));
             }
         }
     }
@@ -1160,6 +1231,7 @@ impl<'res> TypeResolver<'res> {
     /// ignored, meaning there is no real discernment. May change if needed.
     fn resolve_cfg_member<'env>(
         &mut self,
+        //TODO: AbstractRootMetadata?
         // For resolve_expr
         root_parent_impl_id: ImplId,
         root_span: SourceSpan,
@@ -1177,7 +1249,7 @@ impl<'res> TypeResolver<'res> {
         // Carried over and reset through cfg member recursive resolution to track duplicate
         // identifiers.
         seen_opt_idents: &mut DuplicateTracker<SpannedContainer<InternedId>>,
-        parent_member_id: MemberId,
+        parent_memb_id: MemberId,
         parent_abs_cfg: &'env AbstractConfig,
         scope_type: ScopeType,
         depth: u8,
@@ -1250,7 +1322,7 @@ impl<'res> TypeResolver<'res> {
 
                     let impl_member_id = ImplMemberId::new(self.compiler.impl_members.len() as u32);
                     let opt = OptionAssignmentMember::new(
-                        parent_member_id,
+                        parent_memb_id,
                         impl_member_id,
                         abs_opt.name_id,
                         abs_opt.name_span,
@@ -1304,7 +1376,7 @@ impl<'res> TypeResolver<'res> {
         // WARN: This may allow for some transient issues to exist where the thing SHOULD have a
         // type, but a bug happened earlier, which would be ignored from this if let silently
         // because some consumers actually do need this. We'll see.
-        let parent_type_id_opt = self.compiler.get_type_id_from_member_id(parent_member_id);
+        let parent_type_id_opt = self.compiler.get_type_id_from_member_id(parent_memb_id);
         if let Some(parent_type_id) = parent_type_id_opt {
             for abs_cfg_member in &parent_abs_cfg.cfg_members {
                 let AbstractConfigKind::Member(sp_member_name_id, _) = abs_cfg_member.kind.clone()
@@ -1399,7 +1471,7 @@ impl<'res> TypeResolver<'res> {
                                     // the same guarantees
                                     //
                                     let parent_member_span =
-                                        self.compiler.get_span_from_member_id(parent_member_id);
+                                        self.compiler.get_span_from_member_id(parent_memb_id);
 
                                     let preset_err =
                                         PresetErr::Lookup(LookupError::ImpossibleTypeMemberAccess(
@@ -1665,7 +1737,7 @@ impl<'res> TypeResolver<'res> {
         );
         let cfg_member = ConfigMember::new(
             common,
-            parent_member_id,
+            parent_memb_id,
             parent_type_id_opt,
             meta_kind,
             parent_abs_cfg.lookup_pat,

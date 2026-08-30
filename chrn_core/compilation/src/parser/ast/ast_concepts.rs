@@ -13,9 +13,9 @@ use crate::{
     lookup::scopes::scopes_concepts::{ScopeLookupPattern, ScopeType},
     parser::ast::{
         ast_exprs::{PathSegment, SpannedExpr, TypeExpr},
-        ast_stmts::{AbstractOptionAssignment, AbstractStmt},
+        ast_stmts::AbstractStmt,
     },
-    semantic::hir::hir_impls::ConfigMemberMetadataKind,
+    semantic::hir::hir_impls::{ConfigMemberMetadataKind, ConfigRootMetadataKind},
 };
 
 // Maybe this type of thing should go into an ast_concepts module?
@@ -132,15 +132,6 @@ impl AstInfo {
             },
         }
     }
-
-    // pub(super) fn get_func(&self, ast_id: AstId) -> &AbstractFunc {
-    //     match &self.items[ast_id ] {
-    //         item => match item {
-    //             Item::Func(abs_struct) => abs_struct,
-    //             _ => unreachable!(),
-    //         },
-    //     }
-    // }
 
     pub fn get_enum(&self, ast_id: AstId) -> &AbstractEnum {
         match &self.items[ast_id] {
@@ -383,7 +374,6 @@ impl AbstractVar {
 #[derive(Debug)]
 pub struct AbstractDirective {
     pub sp_name_id: SpannedContainer<InternedId>,
-    // inner:
 }
 
 impl AbstractDirective {
@@ -442,7 +432,6 @@ impl AbstractStruct {
         glob_directives: Vec<AbstractDirective>,
         fields: Vec<AbstractTypeDef>,
         is_priv: bool,
-        // visibility: Visibility,
     ) -> AbstractStruct {
         AbstractStruct {
             name_id,
@@ -450,7 +439,7 @@ impl AbstractStruct {
             glob_directives,
             glob_conds,
             fields,
-            is_priv, // visibility,
+            is_priv,
         }
     }
 }
@@ -562,8 +551,7 @@ impl AbstractFuncDecl {
 
 #[derive(Debug)]
 pub struct AbstractConfig {
-    // common: AbstractConfigCommon,
-    // In regards to "var->" defined variables, I think just allowing for, "var.inner" would be the
+    // In regards to "var->" defined variables, I think just allowing for, "var::inner" would be the
     // best in regards to accessing and changing fields
     // Could be a "Outer.a { }" where it is defining it's fields config specifically
     /// Name of assumed struct/enum type to configure
@@ -606,7 +594,7 @@ pub enum ConfigRootKindFlat {
 #[derive(Debug, Clone)]
 pub enum AbstractConfigKind {
     /// Name attached to root
-    Root(Vec<SpannedContainer<PathSegment>>),
+    Root(Vec<SpannedContainer<PathSegment>>, ConfigRootMetadataKind),
     /// :(
     Member(SpannedContainer<InternedId>, ConfigMemberMetadataKind),
 }

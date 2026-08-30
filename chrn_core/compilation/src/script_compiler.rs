@@ -730,7 +730,7 @@ impl ScriptCompiler {
         // Beep
         let intrinsic_scope_opt: Option<ScopeId> = match scope_type {
             // Lazy
-            ScopeType::Complex => self.load_override_symbols().into(),
+            ScopeType::Complex => self.load_complex_symbols().into(),
             ScopeType::Local
             | ScopeType::Neutral
             | ScopeType::Var
@@ -743,6 +743,8 @@ impl ScriptCompiler {
         let scope = Scope::new(scope_id, scope_type, false, intrinsic_scope_opt);
         let scope_info = ScopeInfo::new(scope, None, owner_id);
         self.scopes.push(scope_info);
+        dbg!(self.intrinsic_registry.complex_scope_id);
+        dbg!(intrinsic_scope_opt);
 
         // Giving module the scope id so that it can have it searched in `scopes::` operations
         let owner_mod = &mut self.mods[owner_id];
@@ -864,7 +866,7 @@ impl ScriptCompiler {
     /// "types" and their own specific java::int and so on.
     ///
     /// If the override instrinsic `ScopeId` already exists then this will just return that scope id.
-    fn load_override_symbols(&mut self) -> ScopeId {
+    fn load_complex_symbols(&mut self) -> ScopeId {
         //NOTE: Just in case this is called without knowledge of if the override scope exists.
         if let Some(inner) = self.intrinsic_registry.complex_scope_id {
             return inner;
@@ -893,6 +895,7 @@ impl ScriptCompiler {
 
         // ????
 
+        self.intrinsic_registry.complex_scope_id = Some(scope_id);
         scope_id
     }
 

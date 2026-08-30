@@ -45,7 +45,7 @@ pub(super) fn make_footers(reporter: &Reporter) -> Vec<FooterKind> {
     footers
 }
 
-//TEST:
+/// Helper that makes footers and renders diagnostics into a string
 pub(super) fn render_diags(
     reporter: &Reporter,
     region_arena: Option<&Arena<SourceRegion, SourceRegionId>>,

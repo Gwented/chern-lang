@@ -39,3 +39,27 @@ pub fn find_sym_id(
         }
     }
 }
+
+/// Convenience over `scopes::find_sym_id` which covers preset handling boiler-plate
+pub fn find_sym_id_intrinsic(
+    compiler: &ScriptCompiler,
+    associated_scope: AssociatedScopeKind,
+    sp_target_name_id: SpannedContainer<InternedId>,
+    scope_type: ScopeType,
+) -> Result<SymbolLookupOutput, PresetErr> {
+    match scopes::find_sym_id_intrinsic(
+        compiler,
+        associated_scope,
+        sp_target_name_id.inner,
+        scope_type,
+    ) {
+        Some(out) => Ok(out),
+        None => {
+            let lookup_err = LookupError::SymbolNotFound {
+                sp_invalid_name_id: sp_target_name_id,
+                scope_searched: associated_scope,
+            };
+            Err(lookup_err.into())
+        }
+    }
+}

@@ -9,6 +9,7 @@ macro_rules! s_suffix {
 // Incredible name
 /// Given a size in bytes, formats it into a human-readable string with the unit suffix to at most a
 /// GB
+/// Would turn `1024` into `1 KiB` and so on
 #[macro_export]
 macro_rules! byte_formatter {
     ($size:expr) => {{

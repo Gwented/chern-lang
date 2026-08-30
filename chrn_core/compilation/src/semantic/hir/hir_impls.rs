@@ -211,9 +211,9 @@ impl ConfigMember {
 // Maybe embed this into lookup instead?
 #[derive(Debug, Clone)]
 pub enum ConfigRootMetadataKind {
-    Complex(SpannedContainer<TypeExpr>),
+    Complex,
     /// Name span
-    Override(SourceSpan),
+    Override,
 }
 
 // Oh my.
