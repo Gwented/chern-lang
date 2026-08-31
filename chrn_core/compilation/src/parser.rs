@@ -866,7 +866,7 @@ fn parse_cfg_expr(
             )
         {
             // for "inner {/*assignments*/}"
-            match parse_cfg_expr(ctx, budget, None, false, interner) {
+            match parse_cfg_expr(ctx, budget, root_meta_opt, false, interner) {
                 Ok(abs_cfg) => cfg_members.push(abs_cfg),
                 Err(_) => break,
             };
@@ -1007,11 +1007,13 @@ fn handle_cfg_metadata(
                 ConfigMemberMetadataKind::Override(meta),
             )
         } else {
-            let meta = ComplexConfigMemberMetadata::new();
-            (
-                ScopeLookupPattern::NoRestrictions,
-                ConfigMemberMetadataKind::Complex(meta),
-            )
+            let meta_kind = if let Some(ConfigRootMetadataKind::Override) = root_meta_opt {
+                ConfigMemberMetadataKind::Override(OverrideConfigMemberMetadata::new())
+            } else {
+                ConfigMemberMetadataKind::Complex(ComplexConfigMemberMetadata::new())
+            };
+
+            (ScopeLookupPattern::NoRestrictions, meta_kind)
         };
 
         // If !root

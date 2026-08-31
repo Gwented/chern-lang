@@ -209,7 +209,7 @@ impl ConfigMember {
 }
 
 // Maybe embed this into lookup instead?
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum ConfigRootMetadataKind {
     Complex,
     /// Name span

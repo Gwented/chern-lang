@@ -142,7 +142,9 @@ impl Scope {
 
 #[derive(Debug)]
 pub struct SymbolLookupOutput {
+    /// `SymbolId` of found symbol
     pub found_sym_id: SymbolId,
+    /// `ScopeId` the found symbol was found in
     pub scope_found_in: ScopeId,
 }
 
@@ -310,6 +312,13 @@ impl ScopeLookupPreferenceFlags {
 
     pub fn new(flags: Option<u16>) -> Self {
         Self { flags }
+    }
+
+    /// Creates `ScopeLookupPreferenceFlags` with only flag `NAMESPACE`
+    pub fn new_namespace() -> Self {
+        Self {
+            flags: Some(Self::NAMESPACE),
+        }
     }
 
     /// Creates lookup preference with no preferred options

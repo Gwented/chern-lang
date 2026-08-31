@@ -47,7 +47,8 @@ use crate::parser::ast::ast_stmts::AbstractStmt;
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::resolvers::resolver_state::ResolverState;
 use crate::resolvers::type_resolver::cfg_ctx::{
-    ConfigMemberComplexContext, ConfigMemberContextKind, ConfigMemberOutput, ConfigMemberResult,
+    ConfigMemberComplexContext, ConfigMemberContextKind, ConfigMemberOverrideContext,
+    ConfigRootComplexContext, ConfigRootContextKind, ConfigRootOverrideContext,
 };
 use crate::resolvers::typechecker;
 use crate::script_compiler::{ScriptCompiler, compiler_constants};
@@ -743,6 +744,25 @@ impl<'res> TypeResolver<'res> {
             return;
         };
 
+        // This is getting suspicious
+        //
+        let root_ctx = match root_meta {
+            ConfigRootMetadataKind::Complex => {
+                let type_id = self
+                    .compiler
+                    .get_type_id_from_sym_id(found_sym_id)
+                    .expect("Should be typechecked");
+                // Types only
+                let ctx = ConfigRootComplexContext::new(type_id);
+                ConfigRootContextKind::Complex(ctx)
+            }
+            ConfigRootMetadataKind::Override => {
+                // Can only be a namespace currently
+                let ctx = ConfigRootOverrideContext::new(found_sym_id);
+                ConfigRootContextKind::Override(ctx)
+            }
+        };
+
         // Expected to be `ConfigDefMember`
         let mut cfg_members: Vec<ImplMemberId> = Vec::with_capacity(abs_cfg_root.cfg_members.len());
 
@@ -951,19 +971,21 @@ impl<'res> TypeResolver<'res> {
                     // that will be created inside the recursive resolution method.
                     // let scope = &self.compiler.scopes[ScopeId::new(7)].scope;
 
-                    let ctx = ConfigMemberComplexContext::new(parent_type_id);
+                    //NOTE: This is more like a root context, and member context. Should we make
+                    //this or is that over-complication?
+                    let memb_ctx = ConfigMemberComplexContext::new(memb_id);
                     self.resolve_cfg_member(
                         parent_impl_id,
                         // The type expr is derivative of path segments which may or may not be a valid type
                         // expr hence this is using last segment
                         last_seg.span,
-                        &ConfigMemberContextKind::Complex(ctx),
+                        &root_ctx,
+                        &ConfigMemberContextKind::Complex(memb_ctx),
                         // sp_path_segs,
                         // &mut cfg_dfs,
                         &mut seen_cfg_idents,
                         // NOTE: Opt ident tracker
                         ident_tracker,
-                        memb_id,
                         abs_cfg_memb,
                         scope_type,
                         1,
@@ -972,30 +994,95 @@ impl<'res> TypeResolver<'res> {
 
                     // todo!("Membering remembering")
                 }
+                // The intent is to if `complex`, correctly route to the intrinsic scope, just as an
+                // override root would.
                 ConfigMemberMetadataKind::Override(meta) => {
                     // Translating
-                    let ident = SpannedContainer::new(
-                        PathSegment::Ident(sp_memb_name_id.inner),
-                        sp_memb_name_id.span,
-                    );
-                    // Checked wrapper?
+                    // let ident = SpannedContainer::new(
+                    //     PathSegment::Ident(sp_memb_name_id.inner),
+                    //     sp_memb_name_id.span,
+                    // );
+
+                    // Based off root, either get the namespace from the already existent intrinsic
+                    // scope root.
+                    // Or do the lookup inline
+
+                    // Type checker already makes sure it's not a module namespace
                     //
-                    // Initial or last scope?
-                    todo!("HIIIIIIIIIIIIi");
-                    let sym_id = match self.lookup_cfg_memb_override(&[ident], initial_scope, env) {
-                        Ok(sym_id) => sym_id,
-                        Err(preset_err) => {
-                            preset_reporter::report_preset(
+                    // These are both made by deriving facts, but the safer decision is probably to
+                    // use the root information directly.
+                    let override_sym_id = match root_meta {
+                        // Definitely need a different name for this. Override is FROM complex,
+                        // BOTH are complex.
+                        ConfigRootMetadataKind::Complex => {
+                            match scopes_helpers::find_sym_id_intrinsic(
                                 self.compiler,
-                                &mut self.summary,
-                                preset_err,
-                                env.region,
-                                self.cfg,
-                                self.interner,
-                            );
-                            continue;
+                                last_scope,
+                                sp_memb_name_id,
+                                scope_type,
+                            ) {
+                                Ok(out) => out.found_sym_id,
+                                Err(preset_err) => {
+                                    preset_reporter::report_preset(
+                                        self.compiler,
+                                        &mut self.summary,
+                                        preset_err,
+                                        env.region,
+                                        self.cfg,
+                                        self.interner,
+                                    );
+                                    continue;
+                                }
+                            }
+                        }
+                        // If it's an override root that means we semantically start from there
+                        ConfigRootMetadataKind::Override => {
+                            let root_scope = self.compiler.symbols[found_sym_id]
+                                .associated_scope
+                                .expect("Confirmed by override root match");
+                            match scopes_helpers::find_sym_id(
+                                self.compiler,
+                                root_scope,
+                                sp_memb_name_id,
+                                scope_type,
+                                ScopeLookupPattern::NamespaceOnly,
+                                ScopeLookupPreferenceFlags::new_namespace(),
+                            ) {
+                                Ok(out) => out.found_sym_id,
+                                Err(preset_err) => {
+                                    preset_reporter::report_preset(
+                                        self.compiler,
+                                        &mut self.summary,
+                                        preset_err,
+                                        env.region,
+                                        self.cfg,
+                                        self.interner,
+                                    );
+                                    continue;
+                                }
+                            }
                         }
                     };
+
+                    let memb_ctx = ConfigMemberOverrideContext::new();
+
+                    self.resolve_cfg_member(
+                        parent_impl_id,
+                        // The type expr is derivative of path segments which may or may not be a valid type
+                        // expr hence this is using last segment
+                        last_seg.span,
+                        &root_ctx,
+                        &ConfigMemberContextKind::Override(memb_ctx),
+                        // sp_path_segs,
+                        // &mut cfg_dfs,
+                        &mut seen_cfg_idents,
+                        // NOTE: Opt ident tracker
+                        ident_tracker,
+                        abs_cfg_memb,
+                        scope_type,
+                        1,
+                        env,
+                    );
                     todo!("Hi")
                 }
             };
@@ -1228,14 +1315,13 @@ impl<'res> TypeResolver<'res> {
     /// Method that recursively resolves `ConfigDefMember` and `OptionAssignmentMember`
     ///
     /// This has no failure case because unknown fields have a diagnostic given to them then they're
-    /// ignored, meaning there is no real discernment. May change if needed.
+    /// ignored, meaning there is no real discernment.
     fn resolve_cfg_member<'env>(
         &mut self,
-        //TODO: AbstractRootMetadata?
-        // For resolve_expr
         root_parent_impl_id: ImplId,
         root_span: SourceSpan,
-        cfg_ctx: &ConfigMemberContextKind,
+        cfg_root_ctx: &ConfigRootContextKind,
+        parent_cfg_memb_ctx: &ConfigMemberContextKind,
         // For tracking invalid recursive usage
         // Recursive errors no longer exist at the moment because override can only access known
         // configs like "types" inside of "RUST { types {} }".
@@ -1249,7 +1335,6 @@ impl<'res> TypeResolver<'res> {
         // Carried over and reset through cfg member recursive resolution to track duplicate
         // identifiers.
         seen_opt_idents: &mut DuplicateTracker<SpannedContainer<InternedId>>,
-        parent_memb_id: MemberId,
         parent_abs_cfg: &'env AbstractConfig,
         scope_type: ScopeType,
         depth: u8,
@@ -1293,6 +1378,12 @@ impl<'res> TypeResolver<'res> {
         for abs_stmt in &parent_abs_cfg.abs_stmts {
             match abs_stmt {
                 AbstractStmt::OptAssignment(abs_opt) => {
+                    let parent_memb_id = if let Some(id) = parent_cfg_memb_ctx.memb_id() {
+                        id
+                    } else {
+                        todo!("Wronk")
+                    };
+
                     let sp_name_id = SpannedContainer::new(abs_opt.name_id, abs_opt.name_span);
                     seen_opt_idents.insert_or_store(sp_name_id);
 
@@ -1376,7 +1467,7 @@ impl<'res> TypeResolver<'res> {
         // WARN: This may allow for some transient issues to exist where the thing SHOULD have a
         // type, but a bug happened earlier, which would be ignored from this if let silently
         // because some consumers actually do need this. We'll see.
-        let parent_type_id_opt = self.compiler.get_type_id_from_member_id(parent_memb_id);
+        let parent_type_id_opt = self.compiler.get_type_id_from_member_id(todo!());
         if let Some(parent_type_id) = parent_type_id_opt {
             for abs_cfg_member in &parent_abs_cfg.cfg_members {
                 let AbstractConfigKind::Member(sp_member_name_id, _) = abs_cfg_member.kind.clone()
@@ -1388,7 +1479,7 @@ impl<'res> TypeResolver<'res> {
                 seen_cfg_idents.push(sp_member_name_id.clone());
 
                 //Complex
-                let member_id = if scope_type == ScopeType::Complex {
+                let memb_id = if scope_type == ScopeType::Complex {
                     // -- DEPTH HANDLING START --
                     // If the scope is complex, it's not override (which is an exception for deeper
                     // nesting in complex), and depth + 1 is 2 then err.
@@ -1471,7 +1562,7 @@ impl<'res> TypeResolver<'res> {
                                     // the same guarantees
                                     //
                                     let parent_member_span =
-                                        self.compiler.get_span_from_member_id(parent_memb_id);
+                                        self.compiler.get_span_from_member_id(todo!());
 
                                     let preset_err =
                                         PresetErr::Lookup(LookupError::ImpossibleTypeMemberAccess(
@@ -1588,21 +1679,22 @@ impl<'res> TypeResolver<'res> {
                     panic!("We'll see");
                 };
 
-                let cfg_member_id = self.resolve_cfg_member(
+                let inner_memb_ctx = ConfigMemberComplexContext::new(memb_id);
+                let cfg_memb_id = self.resolve_cfg_member(
                     root_parent_impl_id,
                     root_span,
-                    cfg_ctx,
+                    cfg_root_ctx,
+                    &ConfigMemberContextKind::Complex(inner_memb_ctx),
                     // cfg_dfs,
                     seen_cfg_idents,
                     seen_opt_idents,
-                    member_id,
                     abs_cfg_member,
                     scope_type,
                     depth + 1,
                     env,
                 );
 
-                cfg_members.push(cfg_member_id);
+                cfg_members.push(cfg_memb_id);
 
                 // If any cfg was added during the recursive descent, this truncates so that the vector
                 // can be re-used where it left off.
@@ -1617,6 +1709,7 @@ impl<'res> TypeResolver<'res> {
             // Not sure what to do with override because override is supposed to act off
             // intrinsics, which can't be invalid. Type or no type override is the same so it should
             // probably just delegate to a method.
+            //TODO: Should depend on ctx I believe
             if scope_type == ScopeType::Complex {
                 // Only possible error for a complex semantic section. Members without types can
                 // only use options.
@@ -1735,9 +1828,10 @@ impl<'res> TypeResolver<'res> {
             sp_parent_name_id.span,
             current_cfg_member_id,
         );
+        //TODO: Should...do something
         let cfg_member = ConfigMember::new(
             common,
-            parent_memb_id,
+            todo!(),
             parent_type_id_opt,
             meta_kind,
             parent_abs_cfg.lookup_pat,

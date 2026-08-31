@@ -144,6 +144,7 @@ pub fn find_sym_id_intrinsic(
                                 .get(&target_name_id)
                                 .copied()
                             {
+                                let associated = compiler.symbols[sym_id].associated_scope;
                                 return Some(SymbolLookupOutput::new(
                                     sym_id,
                                     scope_info.scope.scope_id,

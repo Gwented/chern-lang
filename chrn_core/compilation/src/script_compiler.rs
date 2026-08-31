@@ -572,15 +572,16 @@ impl ScriptCompiler {
         }
     }
 
+    // Ok but what if this was const
     /// Attempts to get a `SymbolId` out of a `TypeId`
     pub(super) fn get_sym_id_from_type_id(&self, mut type_id: TypeId) -> Option<SymbolId> {
         let checked = walk_type_id_deferred!(&self.types, type_id);
         match &self.types[checked.inner].ty {
-            Type::Struct(struct_def) => struct_def.sym_id.into(),
-            Type::Enum(enum_def) => enum_def.sym_id.into(),
-            Type::Func(func_def) => func_def.sym_id.into(),
-            Type::Alias(alias_def) => alias_def.sym_id.into(),
-            Type::TypeDef(type_def) => type_def.sym_id.into(),
+            Type::Struct(struct_def) => Some(struct_def.sym_id),
+            Type::Enum(enum_def) => Some(enum_def.sym_id),
+            Type::Func(func_def) => Some(func_def.sym_id),
+            Type::Alias(alias_def) => Some(alias_def.sym_id),
+            Type::TypeDef(type_def) => Some(type_def.sym_id),
             Type::BuiltinTypeInfo(info) => Some(info.sym_id),
             Type::Boundaries(_) | Type::Unknown => None,
             Type::Deferred(_) => unreachable!(),
@@ -743,8 +744,6 @@ impl ScriptCompiler {
         let scope = Scope::new(scope_id, scope_type, false, intrinsic_scope_opt);
         let scope_info = ScopeInfo::new(scope, None, owner_id);
         self.scopes.push(scope_info);
-        dbg!(self.intrinsic_registry.complex_scope_id);
-        dbg!(intrinsic_scope_opt);
 
         // Giving module the scope id so that it can have it searched in `scopes::` operations
         let owner_mod = &mut self.mods[owner_id];
