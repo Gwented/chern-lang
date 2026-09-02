@@ -52,7 +52,7 @@ impl ConfigRootContextKind {
 
 #[derive(Debug)]
 pub(super) struct ConfigRootOverrideContext {
-    sym_id: SymbolId,
+    pub(super) sym_id: SymbolId,
 }
 
 impl ConfigRootOverrideContext {
@@ -63,7 +63,7 @@ impl ConfigRootOverrideContext {
 
 #[derive(Debug)]
 pub(super) struct ConfigRootComplexContext {
-    type_id: TypeId,
+    pub(super) type_id: TypeId,
 }
 
 impl ConfigRootComplexContext {

@@ -12,8 +12,9 @@ use crate::lookup::scopes::scopes_concepts::ScopeLookupPattern;
 use crate::parser::ast::ast_concepts::{
     AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractDirective,
     AbstractEnum, AbstractImpl, AbstractMemberAccess, AbstractParam, AbstractStruct,
-    AbstractTypeDef, AbstractVar, AbstractVariant, AstInfo, BinaryOp, Item, SectionKind, Unary,
-    UnaryOp,
+    AbstractTypeDef, AbstractVar, AbstractVariant, AstComplexConfigMetadata,
+    AstConfigMemberMetadataKind, AstInfo, AstOverrideConfigMetadata, BinaryOp, Item, SectionKind,
+    Unary, UnaryOp,
 };
 
 use crate::parser::ast::ast_exprs::{
@@ -27,10 +28,7 @@ use crate::parser::context::ParserContext;
 use crate::parser::evidence::{Evidence, InitialEvidence, SemanticEnv, SemanticSituation};
 use crate::parser::parser_budget::ParserBudget;
 use crate::parser::parser_state::ParserState;
-use crate::semantic::hir::hir_impls::{
-    ComplexConfigMemberMetadata, ConfigMemberMetadataKind, ConfigRootMetadataKind,
-    OverrideConfigMemberMetadata,
-};
+use crate::semantic::hir::hir_impls::ConfigRootMetadataKind;
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::chrn_config::chrn_perf::ChrnPerfStage;
 use chrn_utils::intern::Intern;
@@ -341,6 +339,7 @@ pub fn parse(
                                 ctx.advance_tok();
                                 Some(ConfigRootMetadataKind::Override)
                             }
+                            //FIXME: Maybe, maybe not. Probably shouldn't allow for this.
                             _ => None,
                         };
 
@@ -1001,16 +1000,16 @@ fn handle_cfg_metadata(
         // since this is not the cleanest greenest all passing code to land.
         let (pat, meta_kind) = if ctx.peek_tok() == Token::Keyword(Keyword::Override) {
             ctx.advance_tok();
-            let meta = OverrideConfigMemberMetadata::new();
+            let meta = AstOverrideConfigMetadata::new();
             (
                 ScopeLookupPattern::NamespaceOnly,
-                ConfigMemberMetadataKind::Override(meta),
+                AstConfigMemberMetadataKind::Override(meta),
             )
         } else {
             let meta_kind = if let Some(ConfigRootMetadataKind::Override) = root_meta_opt {
-                ConfigMemberMetadataKind::Override(OverrideConfigMemberMetadata::new())
+                AstConfigMemberMetadataKind::Override(AstOverrideConfigMetadata::new())
             } else {
-                ConfigMemberMetadataKind::Complex(ComplexConfigMemberMetadata::new())
+                AstConfigMemberMetadataKind::Complex(AstComplexConfigMetadata::new())
             };
 
             (ScopeLookupPattern::NoRestrictions, meta_kind)

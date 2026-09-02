@@ -1,7 +1,11 @@
 use super::helpers::*;
 use crate::script_compiler::compiler_constants::{CORE_I64, CORE_STR, CORE_UNKNOWN};
 use crate::semantic::hir::hir_concepts::Type;
+use crate::semantic::hir::hir_exprs::ResolvedExpr;
+use crate::semantic::hir::hir_impls::ImplMemberKind;
 use crate::semantic::hir::hir_symbols::SymbolKind;
+use crate::semantic::hir::value_info::ValueInfo;
+use crate::walk_type_id_deferred;
 use chrn_utils::id_types::TypeId;
 
 #[test]
@@ -230,5 +234,129 @@ fn type_resolver_string_concat_type_test() {
         val_info.type_id,
         TypeId::new(CORE_STR),
         "String concat result should have str type"
+    );
+}
+
+fn root_option_expr_and_value<'a>(
+    resolution: &'a Resolution,
+    option_name: &str,
+) -> (&'a ResolvedExpr, &'a ValueInfo) {
+    let option = resolution
+        .compiler
+        .impl_members
+        .iter()
+        .find_map(|member| match member {
+            ImplMemberKind::OptAssignmentRoot(option)
+                if resolution.interner.search(option.name_id) == option_name =>
+            {
+                Some(option)
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("root option `{option_name}` should exist"));
+    let array_expr = &resolution.compiler.exprs[option.array_expr_id];
+    (array_expr, &resolution.compiler.values[array_expr.val_id])
+}
+
+fn assert_i64_array(option_name: &str, value: &ValueInfo, expected: &[i64]) {
+    let Some(Value::Array(values)) = &value.const_val else {
+        panic!(
+            "option `{option_name}` should hold a constant array, got {:?}",
+            value.const_val
+        );
+    };
+    assert_eq!(values.len(), expected.len());
+    for (value, expected) in values.iter().zip(expected) {
+        assert!(
+            matches!(value, Value::I64(found) if found == expected),
+            "expected i64 value {expected}, got {value:?}"
+        );
+    }
+}
+
+fn concrete_type(resolution: &Resolution, mut type_id: TypeId) -> TypeId {
+    walk_type_id_deferred!(&resolution.compiler.types, type_id).inner
+}
+
+#[test]
+fn standing_expr_resolves_pending_symbol_in_root_option() {
+    let resolution = resolve_single_module(
+        "
+            let PENDING = SOURCE
+            let SOURCE = 4
+            nest->
+                struct Settings {}
+            complex->
+                Settings { values = [PENDING] }
+        ",
+        Stage::Type,
+    )
+    .expect_ok();
+
+    let (expr, value) = root_option_expr_and_value(&resolution, "values");
+    assert_eq!(
+        concrete_type(&resolution, expr.type_id),
+        TypeId::new(CORE_I64)
+    );
+    assert_i64_array("values", value, &[4]);
+}
+
+#[test]
+fn standing_expr_repairs_each_dependent_expression_tree() {
+    let resolution = resolve_single_module(
+        "
+            let PENDING = SOURCE
+            let SOURCE = 4
+            nest->
+                struct Settings {}
+            complex->
+                Settings {
+                    direct = [PENDING]
+                    computed = [1, PENDING + 2]
+                }
+        ",
+        Stage::Type,
+    )
+    .expect_ok();
+
+    let (direct_expr, direct_value) = root_option_expr_and_value(&resolution, "direct");
+    assert_eq!(
+        concrete_type(&resolution, direct_expr.type_id),
+        TypeId::new(CORE_I64)
+    );
+    assert_i64_array("direct", direct_value, &[4]);
+
+    let (computed_expr, computed_value) = root_option_expr_and_value(&resolution, "computed");
+    assert_eq!(
+        concrete_type(&resolution, computed_expr.type_id),
+        TypeId::new(CORE_I64)
+    );
+    assert_i64_array("computed", computed_value, &[1, 6]);
+}
+
+#[test]
+fn standing_expr_updates_resolved_value_type() {
+    let resolution = resolve_single_module(
+        "
+            let PENDING = SOURCE
+            let SOURCE = 4
+            nest->
+                struct Settings {}
+            complex->
+                Settings { values = [PENDING] }
+        ",
+        Stage::Type,
+    )
+    .expect_ok();
+
+    let (expr, value) = root_option_expr_and_value(&resolution, "values");
+    assert_eq!(
+        concrete_type(&resolution, expr.type_id),
+        TypeId::new(CORE_I64)
+    );
+    assert_eq!(
+        concrete_type(&resolution, value.type_id),
+        TypeId::new(CORE_I64),
+        "resolving a standing expression must update its cached value type with its expression type"
     );
 }

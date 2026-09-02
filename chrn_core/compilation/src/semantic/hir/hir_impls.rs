@@ -6,10 +6,7 @@ use chrn_utils::{
     utils::containers::SpannedContainer,
 };
 
-use crate::{
-    lookup::scopes::scopes_concepts::{ScopeLookupPattern, ScopeType},
-    parser::ast::ast_exprs::TypeExpr,
-};
+use crate::lookup::scopes::scopes_concepts::{ScopeLookupPattern, ScopeType};
 
 #[derive(Debug)]
 pub struct ImplHir {
@@ -161,20 +158,12 @@ impl ConfigMemberCommon {
 /// but with ties to an `ImplMemberKind` instead of a `ImplHir`
 #[derive(Debug)]
 pub struct ConfigMember {
-    common: ConfigMemberCommon,
-    /// `MemberId` of the member symbol this is attached to
-    pub linked_member_id: MemberId,
-    // This is mostly here because the padding is going to make it 80 bytes anyways so why not store
-    // the type to avoid extra lookups
-    /// `TypeId` of the member symbol this is attached to
-    /// This is `Option` because a type like a variant doesn't have a type, so this is not
-    /// guaranteed
-    pub linked_member_type_id: Option<TypeId>,
+    pub common: ConfigMemberCommon,
     /// Expects `OptionAssignmentMember`
-    pub opt_assignments: Vec<ImplMemberId>,
+    pub abs_stmts: Vec<ImplMemberId>,
     // These configs are supposed to be usable by override too so maybe this becomes an enum where
     // it exposes metadata depending on override or not.
-    pub metadata: ConfigMemberMetadataKind,
+    pub meta: ConfigMemberMetadataKind,
     //NOTE: Members use `ScopeLookupPattern::NamespaceOnly` only but this is kept here for now
     //because it may be used in the future (was used in the past)
     //
@@ -189,19 +178,15 @@ pub struct ConfigMember {
 impl ConfigMember {
     pub fn new(
         common: ConfigMemberCommon,
-        linked_member_id: MemberId,
-        linked_member_type_id: Option<TypeId>,
-        metadata: ConfigMemberMetadataKind,
+        meta: ConfigMemberMetadataKind,
         lookup_pat: ScopeLookupPattern,
-        opt_assignments: Vec<ImplMemberId>,
+        abs_stmts: Vec<ImplMemberId>,
         cfg_members: Vec<ImplMemberId>,
     ) -> ConfigMember {
         ConfigMember {
             common,
-            linked_member_id,
-            linked_member_type_id,
-            metadata,
-            opt_assignments,
+            meta,
+            abs_stmts,
             lookup_pat,
             cfg_members,
         }
@@ -212,79 +197,38 @@ impl ConfigMember {
 #[derive(Debug, Copy, Clone)]
 pub enum ConfigRootMetadataKind {
     Complex,
-    /// Name span
     Override,
 }
 
-// Oh my.
-/// In `override`, it has the choice between directly interacting with a global namespace like "JAVA"
-/// or with a user defined type.
-#[derive(Debug, Clone)]
-pub enum OverrideConfigRootMetadataKind {
-    Namespace(SpannedContainer<InternedId>),
-    Type(SpannedContainer<TypeExpr>),
-}
-
-/// For allowing one config to hold different metadata depending on the context
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum ConfigMemberMetadataKind {
-    Complex(ComplexConfigMemberMetadata),
-    Override(OverrideConfigMemberMetadata),
+    Complex(ConfigMemberComplexMetadata),
+    Override(ConfigMemberOverrideMetadata),
 }
 
-impl ConfigMemberMetadataKind {
-    /// Returns `true` if complex variant, false otherwise
-    /// `override` section
-    pub fn is_complex(&self) -> bool {
-        match self {
-            ConfigMemberMetadataKind::Complex(_) => true,
-            ConfigMemberMetadataKind::Override(_) => false,
-        }
-    }
+#[derive(Debug)]
+pub struct ConfigMemberComplexMetadata {
+    /// `MemberId` of the member symbol this is attached to
+    pub linked_memb_id: MemberId,
+    // This is mostly here because the padding is going to make it 80 bytes anyways so why not store
+    // the type to avoid extra lookups
+    /// `TypeId` of the member symbol this is attached to
+    /// This is `Option` because a type like a variant doesn't have a type, so this is not
+    /// guaranteed
+    pub linked_memb_type_id: Option<TypeId>,
+}
 
-    /// Returns `true` if override variant, false otherwise
-    pub fn is_override(&self) -> bool {
-        match self {
-            ConfigMemberMetadataKind::Override(_) => true,
-            ConfigMemberMetadataKind::Complex(_) => false,
-        }
-    }
-
-    pub fn expect_complex(&self) -> &ComplexConfigMemberMetadata {
-        match self {
-            ConfigMemberMetadataKind::Complex(meta) => meta,
-            _ => panic!("Expected `complex` metadata, found {:?}", self),
-        }
-    }
-
-    pub fn expect_override(&self) -> &OverrideConfigMemberMetadata {
-        match self {
-            ConfigMemberMetadataKind::Override(meta) => meta,
-            _ => panic!("Expected `override` metadata, found {:?}", self),
+impl ConfigMemberComplexMetadata {
+    pub fn new(linked_memb_id: MemberId, linked_memb_type_id: Option<TypeId>) -> Self {
+        Self {
+            linked_memb_id,
+            linked_memb_type_id,
         }
     }
 }
 
-//NOTE: UNUSED
-/// `complex` scope `ConfigMember` specific metadata
-#[derive(Debug, Clone)]
-pub struct ComplexConfigMemberMetadata {}
-
-impl ComplexConfigMemberMetadata {
-    pub const fn new() -> Self {
-        Self {}
-    }
-}
-
-/// `complex` scope `ConfigMember` specific metadata
-#[derive(Debug, Clone)]
-pub struct OverrideConfigMemberMetadata {}
-
-impl OverrideConfigMemberMetadata {
-    pub const fn new() -> Self {
-        Self {}
-    }
-}
+#[derive(Debug)]
+pub struct ConfigMemberOverrideMetadata {}
 
 // Would be:
 // Person {

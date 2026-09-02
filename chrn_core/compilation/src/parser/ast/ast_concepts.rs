@@ -15,7 +15,7 @@ use crate::{
         ast_exprs::{PathSegment, SpannedExpr, TypeExpr},
         ast_stmts::AbstractStmt,
     },
-    semantic::hir::hir_impls::{ConfigMemberMetadataKind, ConfigRootMetadataKind},
+    semantic::hir::hir_impls::ConfigRootMetadataKind,
 };
 
 // Maybe this type of thing should go into an ast_concepts module?
@@ -596,7 +596,68 @@ pub enum AbstractConfigKind {
     /// Name attached to root
     Root(Vec<SpannedContainer<PathSegment>>, ConfigRootMetadataKind),
     /// :(
-    Member(SpannedContainer<InternedId>, ConfigMemberMetadataKind),
+    Member(SpannedContainer<InternedId>, AstConfigMemberMetadataKind),
+}
+
+/// For allowing one config to hold different metadata depending on the context
+#[derive(Debug, Clone)]
+pub enum AstConfigMemberMetadataKind {
+    Complex(AstComplexConfigMetadata),
+    Override(AstOverrideConfigMetadata),
+}
+
+impl AstConfigMemberMetadataKind {
+    /// Returns `true` if complex variant, false otherwise
+    /// `override` section
+    pub fn is_complex(&self) -> bool {
+        match self {
+            AstConfigMemberMetadataKind::Complex(_) => true,
+            AstConfigMemberMetadataKind::Override(_) => false,
+        }
+    }
+
+    /// Returns `true` if override variant, false otherwise
+    pub fn is_override(&self) -> bool {
+        match self {
+            AstConfigMemberMetadataKind::Override(_) => true,
+            AstConfigMemberMetadataKind::Complex(_) => false,
+        }
+    }
+
+    pub fn expect_complex(&self) -> &AstComplexConfigMetadata {
+        match self {
+            AstConfigMemberMetadataKind::Complex(meta) => meta,
+            _ => panic!("Expected `complex` metadata, found {:?}", self),
+        }
+    }
+
+    pub fn expect_override(&self) -> &AstOverrideConfigMetadata {
+        match self {
+            AstConfigMemberMetadataKind::Override(meta) => meta,
+            _ => panic!("Expected `override` metadata, found {:?}", self),
+        }
+    }
+}
+
+//NOTE: UNUSED
+/// `complex` scope `ConfigMember` specific metadata
+#[derive(Debug, Clone)]
+pub struct AstComplexConfigMetadata {}
+
+impl AstComplexConfigMetadata {
+    pub const fn new() -> Self {
+        Self {}
+    }
+}
+
+/// `complex` scope `ConfigMember` specific metadata
+#[derive(Debug, Clone)]
+pub struct AstOverrideConfigMetadata {}
+
+impl AstOverrideConfigMetadata {
+    pub const fn new() -> Self {
+        Self {}
+    }
 }
 
 #[derive(Debug)]

@@ -48,17 +48,22 @@ nest->
 // PROPS TEST START
 complex->
 
-override JAVA {
-    types {}
-}
+/*override JAVA {
+    types {
+        opt = 3
+    }
+}*/
 
 for State {
-    idents = 3
+    InProgress {}
+    stating {
+        opt = 3
+    }
 
     // Need to make root a trickler and make the override config members tricklers. Trickler.
-    override JAVA {
+    /*override JAVA {
         
-    }
+    }*/
 
     // stating {}
     /*override types {
