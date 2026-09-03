@@ -42,10 +42,10 @@ impl ConfigRootContextKind {
     }
 
     /// Attempts to get `SymbolId` out of `self`
-    pub(super) fn sym_id(&self, compiler: &ScriptCompiler) -> Option<SymbolId> {
+    pub(super) fn sym_id(&self) -> Option<SymbolId> {
         match self {
             ConfigRootContextKind::Override(ctx) => Some(ctx.sym_id),
-            ConfigRootContextKind::Complex(ctx) => compiler.get_sym_id_from_type_id(ctx.type_id),
+            ConfigRootContextKind::Complex(_) => None,
         }
     }
 }

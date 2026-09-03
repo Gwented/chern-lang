@@ -13,7 +13,7 @@ use crate::{
     lookup::scopes::scopes_concepts::{ScopeLookupPattern, ScopeType},
     parser::ast::{
         ast_exprs::{PathSegment, SpannedExpr, TypeExpr},
-        ast_stmts::AbstractStmt,
+        ast_stmts::AstStmt,
     },
     semantic::hir::hir_impls::ConfigRootMetadataKind,
 };
@@ -561,7 +561,7 @@ pub struct AbstractConfig {
     //// Config specific to the origin of this metadata. ONLY `ConfigMember` can have this.
     pub kind: AbstractConfigKind,
     /// Configuration options for the current parent to apply
-    pub abs_stmts: Vec<AbstractStmt>,
+    pub abs_stmts: Vec<AstStmt>,
     /// `ScopeType` that should be looked within for the given identifier
     /// Can only be `ScopeLookupPattern::OnlyVar/NamespaceOnly`
     pub lookup_pat: ScopeLookupPattern,
@@ -573,7 +573,7 @@ impl AbstractConfig {
     pub fn new(
         kind: AbstractConfigKind,
         lookup_pat: ScopeLookupPattern,
-        abs_stmts: Vec<AbstractStmt>,
+        abs_stmts: Vec<AstStmt>,
         cfg_members: Vec<AbstractConfig>,
     ) -> AbstractConfig {
         AbstractConfig {
@@ -602,8 +602,8 @@ pub enum AbstractConfigKind {
 /// For allowing one config to hold different metadata depending on the context
 #[derive(Debug, Clone)]
 pub enum AstConfigMemberMetadataKind {
-    Complex(AstComplexConfigMetadata),
-    Override(AstOverrideConfigMetadata),
+    Complex(AstConfigComplexMetadata),
+    Override(AstConfigOverrideMetadata),
 }
 
 impl AstConfigMemberMetadataKind {
@@ -624,14 +624,14 @@ impl AstConfigMemberMetadataKind {
         }
     }
 
-    pub fn expect_complex(&self) -> &AstComplexConfigMetadata {
+    pub fn expect_complex(&self) -> &AstConfigComplexMetadata {
         match self {
             AstConfigMemberMetadataKind::Complex(meta) => meta,
             _ => panic!("Expected `complex` metadata, found {:?}", self),
         }
     }
 
-    pub fn expect_override(&self) -> &AstOverrideConfigMetadata {
+    pub fn expect_override(&self) -> &AstConfigOverrideMetadata {
         match self {
             AstConfigMemberMetadataKind::Override(meta) => meta,
             _ => panic!("Expected `override` metadata, found {:?}", self),
@@ -642,9 +642,9 @@ impl AstConfigMemberMetadataKind {
 //NOTE: UNUSED
 /// `complex` scope `ConfigMember` specific metadata
 #[derive(Debug, Clone)]
-pub struct AstComplexConfigMetadata {}
+pub struct AstConfigComplexMetadata {}
 
-impl AstComplexConfigMetadata {
+impl AstConfigComplexMetadata {
     pub const fn new() -> Self {
         Self {}
     }
@@ -652,9 +652,9 @@ impl AstComplexConfigMetadata {
 
 /// `complex` scope `ConfigMember` specific metadata
 #[derive(Debug, Clone)]
-pub struct AstOverrideConfigMetadata {}
+pub struct AstConfigOverrideMetadata {}
 
-impl AstOverrideConfigMetadata {
+impl AstConfigOverrideMetadata {
     pub const fn new() -> Self {
         Self {}
     }

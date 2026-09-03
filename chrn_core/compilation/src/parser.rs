@@ -12,17 +12,15 @@ use crate::lookup::scopes::scopes_concepts::ScopeLookupPattern;
 use crate::parser::ast::ast_concepts::{
     AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractDirective,
     AbstractEnum, AbstractImpl, AbstractMemberAccess, AbstractParam, AbstractStruct,
-    AbstractTypeDef, AbstractVar, AbstractVariant, AstComplexConfigMetadata,
-    AstConfigMemberMetadataKind, AstInfo, AstOverrideConfigMetadata, BinaryOp, Item, SectionKind,
+    AbstractTypeDef, AbstractVar, AbstractVariant, AstConfigComplexMetadata,
+    AstConfigMemberMetadataKind, AstConfigOverrideMetadata, AstInfo, BinaryOp, Item, SectionKind,
     Unary, UnaryOp,
 };
 
 use crate::parser::ast::ast_exprs::{
     AbstractGeneric, ArrayExpr, AstExpr, PathSegment, SpannedExpr, TypeExpr,
 };
-use crate::parser::ast::ast_stmts::{
-    AbstractOptionAssignment, AbstractStmt, AbstractTypeMultiAssign,
-};
+use crate::parser::ast::ast_stmts::{AbstractOptionAssignment, AbstractTypeMultiAssign, AstStmt};
 use crate::parser::branch::{Branch, NestBranch, NeutralBranch, SectionBranch};
 use crate::parser::context::ParserContext;
 use crate::parser::evidence::{Evidence, InitialEvidence, SemanticEnv, SemanticSituation};
@@ -763,10 +761,11 @@ fn parse_nest_sect(
 //
 // Maybe, separate config and override structures. Maybe.
 // We'll see :(
+/// `root_meta_opt`: Is &mut so that cfg exprs can
 fn parse_cfg_expr(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
-    root_meta_opt: Option<ConfigRootMetadataKind>,
+    mut root_meta_opt: Option<ConfigRootMetadataKind>,
     // It's only one depth so just reflecting it with one T/F state
     is_root: bool,
     interner: &Intern,
@@ -790,7 +789,15 @@ fn parse_cfg_expr(
         Token::Poison
     })?;
 
-    let (lookup_pat, kind) = handle_cfg_metadata(ctx, budget, root_meta_opt, is_root, interner)?;
+    let (lookup_pat, kind) =
+        handle_cfg_metadata(ctx, budget, &mut root_meta_opt, is_root, interner)?;
+    // May be a little too much of a "hack" but this is just, if `override` is used then all later
+    // config metadata will be overidden. This is done because override needs to be inherited.
+    let root_meta_opt = if matches!(root_meta_opt, Some(ConfigRootMetadataKind::Override)) {
+        ConfigRootMetadataKind::Override.into()
+    } else {
+        None
+    };
 
     // Allows for "=>" to notify that
     if ctx.peek_tok() != Token::OCurlyBracket && ctx.peek_tok() != Token::NotSlimArrow {
@@ -836,7 +843,7 @@ fn parse_cfg_expr(
         return Err(Token::Poison);
     }
 
-    let mut stmts: Vec<AbstractStmt> = Vec::new();
+    let mut stmts: Vec<AstStmt> = Vec::new();
     let mut cfg_members: Vec<AbstractConfig> = Vec::new();
 
     //WARN: This is getting suspicious..
@@ -845,7 +852,7 @@ fn parse_cfg_expr(
         if ctx.peek_tok() == Token::Keyword(Keyword::Change) {
             ctx.advance_tok();
             let multi_assign = parse_change(ctx, budget, interner)?;
-            stmts.push(AbstractStmt::MultiAssignType(multi_assign));
+            stmts.push(AstStmt::MultiAssignType(multi_assign));
             continue;
         }
 
@@ -853,7 +860,7 @@ fn parse_cfg_expr(
             // Option parsing.
             // for "cases = expr/[exprs]"
             let opt = parse_option_assignment(ctx, budget, interner)?;
-            stmts.push(AbstractStmt::OptAssignment(opt));
+            stmts.push(AstStmt::OptAssignment(opt));
             // Should this just be earlier? It's own separate earlier if?
         } else if ctx.peek_kind() == TokenKind::Id
             || matches!(
@@ -965,14 +972,15 @@ fn parse_ambiguous_expr(
 fn handle_cfg_metadata(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
-    root_meta_opt: Option<ConfigRootMetadataKind>,
+    root_meta_opt: &mut Option<ConfigRootMetadataKind>,
     is_root: bool,
     interner: &Intern,
 ) -> Result<(ScopeLookupPattern, AbstractConfigKind), Token> {
-    if is_root {
+    let new_meta = if is_root {
         //TODO: Suspicious
+        // It can only be complex otherwise semantically so this default to complex.
         let meta = if let Some(m) = root_meta_opt {
-            m
+            m.clone()
         } else {
             ConfigRootMetadataKind::Complex
         };
@@ -993,23 +1001,26 @@ fn handle_cfg_metadata(
         // decide to resolve as ty or expr
         let ambig_expr = parse_ambiguous_expr(ctx, budget, interner)?;
 
-        return Ok((pat, AbstractConfigKind::Root(ambig_expr, meta)));
+        (pat, AbstractConfigKind::Root(ambig_expr, meta))
     } else {
         // Only members look for override because the root uses a special case check for if it's an
         // override cfg or not. This way was chosen so that the code could stay minimal. May change
         // since this is not the cleanest greenest all passing code to land.
         let (pat, meta_kind) = if ctx.peek_tok() == Token::Keyword(Keyword::Override) {
             ctx.advance_tok();
-            let meta = AstOverrideConfigMetadata::new();
+
+            // Override needs to make all future cfg members override. Complex cannot do this.
+            *root_meta_opt = Some(ConfigRootMetadataKind::Override);
+            let meta = AstConfigOverrideMetadata::new();
             (
                 ScopeLookupPattern::NamespaceOnly,
                 AstConfigMemberMetadataKind::Override(meta),
             )
         } else {
             let meta_kind = if let Some(ConfigRootMetadataKind::Override) = root_meta_opt {
-                AstConfigMemberMetadataKind::Override(AstOverrideConfigMetadata::new())
+                AstConfigMemberMetadataKind::Override(AstConfigOverrideMetadata::new())
             } else {
-                AstConfigMemberMetadataKind::Complex(AstComplexConfigMetadata::new())
+                AstConfigMemberMetadataKind::Complex(AstConfigComplexMetadata::new())
             };
 
             (ScopeLookupPattern::NoRestrictions, meta_kind)
@@ -1030,11 +1041,13 @@ fn handle_cfg_metadata(
             interner,
         )?;
 
-        let sp_interned_id = SpannedContainer::new(name_id, name_span);
-        let kind = AbstractConfigKind::Member(sp_interned_id, meta_kind);
+        let sp_name_id = SpannedContainer::new(name_id, name_span);
+        let kind = AbstractConfigKind::Member(sp_name_id, meta_kind);
 
-        return Ok((pat, kind));
-    }
+        (pat, kind)
+    };
+
+    Ok(new_meta)
 }
 
 // The field assignments could be ANYWHERE as long as it's in a valid scope with the parent it's
@@ -1726,7 +1739,6 @@ fn parse_change(
     budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<AbstractTypeMultiAssign, Token> {
-    // Do not mind this
     parse_multi_assign_type(ctx, budget, interner)
 }
 
@@ -1766,7 +1778,7 @@ fn parse_multi_assign_type(
         interner,
     )?;
 
-    let assign_to = parse_type_expr(ctx, budget, interner)?;
+    let assign_to = parse_ambiguous_expr(ctx, budget, interner)?;
     consume_trailing_comma(ctx);
 
     Ok(AbstractTypeMultiAssign::new(to_assign, assign_to))

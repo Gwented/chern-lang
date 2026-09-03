@@ -48,17 +48,24 @@ nest->
 // PROPS TEST START
 complex->
 
+override JAVA {
+}
+
 /*override JAVA {
-    types {
-        opt = 3
-    }
+    types {}
 }*/
 
 for State {
-    InProgress {}
+    // override JAVA {}
     stating {
         opt = 3
+        // change self = u32?
+        // More specifically, just a way to embed it to pick whatever type self is, rather than
+    override JAVA {}
+        // needing to pick the specific type
+        // change i32,u32 = i32
     }
+    InProgress {}
 
     // Need to make root a trickler and make the override config members tricklers. Trickler.
     /*override JAVA {

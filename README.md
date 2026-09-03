@@ -1,5 +1,3 @@
-# README.md
-
 ## chrn_core/
 Core chrn language library
 

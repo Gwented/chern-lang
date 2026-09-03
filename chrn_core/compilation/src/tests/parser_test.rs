@@ -4,7 +4,7 @@ use crate::parser::ast::ast_concepts::{
     AbstractConfig, AbstractConfigKind, AbstractImpl, BinaryOp, Item, SectionKind, UnaryOp,
 };
 use crate::parser::ast::ast_exprs::{AstExpr, PathSegment, TypeExpr};
-use crate::parser::ast::ast_stmts::AbstractStmt;
+use crate::parser::ast::ast_stmts::AstStmt;
 use chrn_utils::id_types::AstId;
 
 // =============================================================================
@@ -576,7 +576,7 @@ fn parse_complex_config_root() {
     assert!(cfg.cfg_members.is_empty());
 
     // Option assignment: option = [42]
-    let AbstractStmt::OptAssignment(opt) = &cfg.abs_stmts[0] else {
+    let AstStmt::OptAssignment(opt) = &cfg.abs_stmts[0] else {
         panic!("expected option assignment");
     };
     assert_eq!(interner.search(opt.name_id), "option");
@@ -622,7 +622,7 @@ fn parse_complex_config_nested() {
     let inner = &cfg.cfg_members[0];
     assert_eq!(interner.search(cfg_name_id(inner)), "inner");
     assert_eq!(inner.abs_stmts.len(), 1);
-    let AbstractStmt::OptAssignment(opt) = &inner.abs_stmts[0] else {
+    let AstStmt::OptAssignment(opt) = &inner.abs_stmts[0] else {
         panic!("expected option assignment");
     };
     assert_eq!(interner.search(opt.name_id), "opt");
@@ -981,7 +981,7 @@ fn parse_expr_array() {
 
     let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
     assert_eq!(cfg.abs_stmts.len(), 1);
-    let AbstractStmt::OptAssignment(opt) = &cfg.abs_stmts[0] else {
+    let AstStmt::OptAssignment(opt) = &cfg.abs_stmts[0] else {
         panic!("expected option assignment");
     };
     assert_eq!(interner.search(opt.name_id), "opt");
@@ -1525,7 +1525,7 @@ fn parse_complex_member_override_config() {
         inner.kind
     );
     assert_eq!(inner.abs_stmts.len(), 1);
-    let AbstractStmt::OptAssignment(opt) = &inner.abs_stmts[0] else {
+    let AstStmt::OptAssignment(opt) = &inner.abs_stmts[0] else {
         panic!("expected option assignment");
     };
     assert_eq!(interner.search(opt.name_id), "opt");
@@ -1538,10 +1538,10 @@ fn parse_multiple_option_assignments() {
 
     let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
     assert_eq!(cfg.abs_stmts.len(), 2);
-    let AbstractStmt::OptAssignment(opt1) = &cfg.abs_stmts[0] else {
+    let AstStmt::OptAssignment(opt1) = &cfg.abs_stmts[0] else {
         panic!("expected option assignment");
     };
-    let AbstractStmt::OptAssignment(opt2) = &cfg.abs_stmts[1] else {
+    let AstStmt::OptAssignment(opt2) = &cfg.abs_stmts[1] else {
         panic!("expected option assignment");
     };
     assert_eq!(interner.search(opt1.name_id), "opt1");

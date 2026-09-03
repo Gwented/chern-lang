@@ -309,10 +309,21 @@ impl OptionAssignmentMember {
     }
 }
 
+//TODO: We really need some sort of generic type enfrocement where, yes it is still just a symbol id
+//but SymbolId<ExternType> is fully trust-worthy.
 #[derive(Debug)]
 pub struct MultiTypeAssignment {
-    to_assign: Vec<TypeId>,
+    pub to_assign: Vec<TypeId>,
     // Maybe there will be `ExternTypeId` usage but not sure about that.
     /// Expects `SymbolKind::ExternType`
-    assign_to: SymbolId,
+    pub assign_to: SymbolId,
+}
+
+impl MultiTypeAssignment {
+    pub fn new(to_assign: Vec<TypeId>, assign_to: SymbolId) -> Self {
+        Self {
+            to_assign,
+            assign_to,
+        }
+    }
 }

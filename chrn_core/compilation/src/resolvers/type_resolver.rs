@@ -45,7 +45,7 @@ use crate::parser::ast::ast_concepts::{
     AbstractConfig, AbstractConfigKind, AbstractDirective, AstConfigMemberMetadataKind,
 };
 use crate::parser::ast::ast_exprs::{AstExpr, PathSegment, SpannedExpr, TypeExpr};
-use crate::parser::ast::ast_stmts::AbstractStmt;
+use crate::parser::ast::ast_stmts::AstStmt;
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::resolvers::resolver_state::ResolverState;
 use crate::resolvers::type_resolver::cfg_ctx::{
@@ -64,7 +64,7 @@ use crate::semantic::hir::hir_exprs::{
 use crate::semantic::hir::hir_impls::{
     ConfigMember, ConfigMemberCommon, ConfigMemberComplexMetadata, ConfigMemberMetadataKind,
     ConfigMemberOverrideMetadata, ConfigRootMetadataKind, ImplHirKind, ImplMemberKind,
-    OptionAssignmentMember, OptionAssignmentRoot,
+    MultiTypeAssignment, OptionAssignmentMember, OptionAssignmentRoot,
 };
 use crate::semantic::hir::hir_symbols::{
     Symbol, SymbolKind, SymbolOrigin, VarDef, VariableMetadata, VariableState,
@@ -654,8 +654,12 @@ impl<'res> TypeResolver<'res> {
 
         for abs_stmt in &abs_cfg_root.abs_stmts {
             //TODO: Um, method!
+            //Was about to say the same thing.
+            //Could also just converge into a match guarded set of arms, which at the end reports all
+            //Hi
             match abs_stmt {
-                AbstractStmt::OptAssignment(opt) => {
+                AstStmt::OptAssignment(opt) => {
+                    //TODO: Needs (opt, associated_scope, scope_type, env)
                     let sp_name_id = SpannedContainer::new(opt.name_id, opt.name_span);
                     ident_tracker.insert_or_store(sp_name_id);
 
@@ -696,7 +700,35 @@ impl<'res> TypeResolver<'res> {
                         .push(ImplMemberKind::OptAssignmentRoot(opt));
                     memb_stmts.push(impl_memb_id);
                 }
-                AbstractStmt::MultiAssignType(multi_assign) => todo!(),
+                //NOTE: There is no point where a root override would have access to a type
+                //multi-assign. Could change but as of right now this is a guarantee.
+                AstStmt::MultiAssignType(abs_multi) => {
+                    let core_msg = if !matches!(root_meta, ConfigRootMetadataKind::Override) {
+                        "Cannot use `change` outside of `override`"
+                    } else {
+                        "No context expects `change` at root"
+                    };
+
+                    let start = abs_multi.to_assign[0].span.start;
+                    let end = abs_multi.assigned_to[abs_multi.assigned_to.len() - 1]
+                        .span
+                        .end;
+                    let span = SourceSpan::new(env.region.region_id, start, end);
+
+                    //TODO: Would like a help message with this specifying that namespaces are
+                    //required to do something like this, or even the specific `types` on and use a
+                    //preset error, but um. Uh.
+                    let builder = SourceDiagnostic::builder(
+                        //TODO: Member and root specific version maybe since this is getting pretty
+                        //specific
+                        ErrorCode::ConfigDeclErr.into(),
+                        DiagnosticLevel::Error,
+                        core_msg,
+                        env.region.path_id,
+                    )
+                    .add_annotation(span, AnnotationKind::Primary, None);
+                    self.summary.push_diag(builder.build());
+                }
             }
         }
 
@@ -858,11 +890,10 @@ impl<'res> TypeResolver<'res> {
                                             ),
                                         ));
 
-                                    // 4th paste. 4th paste.
-                                    let spans: Vec<SourceSpan> =
-                                        sp_path_segs.iter().map(|s| s.span).collect();
-                                    let sp_path_span = source_span::merge_spans(&spans)
-                                        .expect("Path segments require at least one span");
+                                    let start = sp_path_segs[0].span.start;
+                                    let end = sp_path_segs[sp_path_segs.len() - 1].span.end;
+                                    let path_span =
+                                        SourceSpan::new(env.region.region_id, start, end);
 
                                     preset_reporter::create_diag_builder_preset(
                                 &self.compiler,
@@ -872,7 +903,7 @@ impl<'res> TypeResolver<'res> {
                                 self.interner,
                             )
                             .add_annotation(
-                                sp_path_span,
+                                path_span,
                                 AnnotationKind::Secondary,
                                 format!("`{found_name}` used here").into(),
                             )
@@ -891,17 +922,17 @@ impl<'res> TypeResolver<'res> {
                                 .expect("Should have a span since it has members and was searched");
                                     let fmtted_ty = Type::to_fmt(&self.compiler.types, type_id);
 
-                                    let found_type = &self.compiler.types[type_id];
-                                    //FIX:
+                                    // let found_type = &self.compiler.types[type_id];
+
                                     let found_type_name_id = self
                                         .compiler
                                         .get_name_id_from_type_id(type_id)
-                                        .expect("NOT DONE YET");
+                                        .expect("Should be user defined");
 
-                                    let spans: Vec<SourceSpan> =
-                                        sp_path_segs.iter().map(|s| s.span).collect();
-                                    let sp_path_span = source_span::merge_spans(&spans)
-                                        .expect("Path segments require at least one span");
+                                    let start = sp_path_segs[0].span.start;
+                                    let end = sp_path_segs[sp_path_segs.len() - 1].span.end;
+                                    let path_span =
+                                        SourceSpan::new(env.region.region_id, start, end);
 
                                     // Needs to be done otherwise typedefs, given "x: State" will emit the
                                     // type as `x` rather than `State`
@@ -918,7 +949,7 @@ impl<'res> TypeResolver<'res> {
                                             searched_type_id: type_id,
                                             sp_searched_type_name_id: SpannedContainer::new(
                                                 found_type_name_id,
-                                                sp_path_span,
+                                                path_span,
                                             ),
                                             not_found_name_id: sp_memb_name_id.inner,
                                         });
@@ -942,10 +973,7 @@ impl<'res> TypeResolver<'res> {
                                     )
                                     .build()
                                 }
-                                // TODO: This is reached and should probably result in continue since if
-                                // it's unknown that means a previous stage reported it more likely than
-                                // not. (Its 100%)
-                                // Um. When is this case met?
+                                // I don't know if this is possible anymore
                                 MemberLookupResult::Unknown(type_id) => {
                                     // let var = self.compiler.get_var(found_sym_id);
                                     // let name = self.interner.search(var.name_id);
@@ -1188,8 +1216,6 @@ impl<'res> TypeResolver<'res> {
         cfg_root.common.cfg_members = cfg_members;
     }
 
-    // May be worth landing being greening as a general lookup cfg namespace function
-    // Two findings -- One more important than the other
     // Caveats:
     //
     // Should probably be a general function
@@ -1352,7 +1378,7 @@ impl<'res> TypeResolver<'res> {
         depth: u8,
         env: &ResolverEnv,
     ) -> ImplMemberId {
-        let AbstractConfigKind::Member(sp_parent_name_id, ast_meta_kind) =
+        let AbstractConfigKind::Member(sp_parent_name_id, parent_ast_meta_kind) =
             parent_abs_cfg.kind.clone()
         else {
             unreachable!()
@@ -1390,7 +1416,7 @@ impl<'res> TypeResolver<'res> {
         // &parent_abs_cfg.abs_stmts
         for abs_stmt in &parent_abs_cfg.abs_stmts {
             match abs_stmt {
-                AbstractStmt::OptAssignment(abs_opt) => {
+                AstStmt::OptAssignment(abs_opt) => {
                     let parent_memb_id = if let Some(id) = parent_cfg_memb_ctx.memb_id() {
                         id
                     } else {
@@ -1452,7 +1478,95 @@ impl<'res> TypeResolver<'res> {
                         .push(ImplMemberKind::OptAssignmentMember(opt));
                     opt_assignments.push(impl_memb_id);
                 }
-                AbstractStmt::MultiAssignType(multi_assign) => todo!(),
+                AstStmt::MultiAssignType(abs_multi) => {
+                    if !matches!(
+                        parent_ast_meta_kind,
+                        AstConfigMemberMetadataKind::Override(_)
+                    ) {
+                        let core_msg = "Cannot use `change` outside of `override`";
+
+                        let start = abs_multi.to_assign[0].span.start;
+                        let end = abs_multi.assigned_to[abs_multi.assigned_to.len() - 1]
+                            .span
+                            .end;
+                        let span = SourceSpan::new(env.region.region_id, start, end);
+
+                        let builder = SourceDiagnostic::builder(
+                            //TODO: Member and root specific version maybe since this is getting pretty
+                            //specific
+                            ErrorCode::ConfigDeclErr.into(),
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            env.region.path_id,
+                        )
+                        .add_annotation(
+                            span,
+                            AnnotationKind::Primary,
+                            None,
+                        );
+                        self.summary.push_diag(builder.build());
+                        continue;
+                    }
+
+                    let mut to_assign = Vec::with_capacity(abs_multi.to_assign.len());
+                    for sp_ty_expr in &abs_multi.to_assign {
+                        let type_id = match resolution_helpers::resolve_type_expr_ret_preset(
+                            self.compiler,
+                            todo!(),
+                            sp_ty_expr,
+                            scope_type,
+                            ScopeLookupPattern::NamespaceOnly,
+                            self.interner,
+                            env,
+                        ) {
+                            Ok(id) => id,
+                            Err(preset_err) => {
+                                preset_reporter::report_preset(
+                                    self.compiler,
+                                    &mut self.summary,
+                                    preset_err,
+                                    env.region,
+                                    self.cfg,
+                                    self.interner,
+                                );
+                                continue;
+                            }
+                        };
+                        to_assign.push(type_id);
+                    }
+
+                    //TODO: Scoping scoping
+                    let last_scope = match resolution_helpers::resolve_static_access_ret_preset(
+                        self.compiler,
+                        &abs_multi.assigned_to,
+                        todo!(),
+                        scope_type,
+                        ScopeLookupPreferenceFlags::new_namespace(),
+                        StaticAccessOption::None,
+                        self.interner,
+                        env,
+                    ) {
+                        Ok(id) => id,
+                        Err(preset_err) => {
+                            preset_reporter::report_preset(
+                                self.compiler,
+                                &mut self.summary,
+                                preset_err,
+                                env.region,
+                                self.cfg,
+                                self.interner,
+                            );
+                            continue;
+                        }
+                    };
+
+                    let assign_to = abs_multi.assigned_to;
+
+                    let thing = if let Some(sym_id) = cfg_root_ctx.sym_id() {
+                        todo!("Symb")
+                    };
+                    todo!("Staup")
+                }
             }
         }
 
@@ -1490,19 +1604,22 @@ impl<'res> TypeResolver<'res> {
         //config member context together.
         //Maybe it may not have to if we go for an idea similar to the above opt checks where it
         //only cares about if a member id exists, rather than if the parent cfg is from complex.
+        //
+        // TODO: This maybe should be based off of the member's config member kind, rather than the
+        // parent.
         let meta = match parent_cfg_memb_ctx {
             ConfigMemberContextKind::Complex(ctx) => {
                 let parent_type_id_opt = self.compiler.get_type_id_from_member_id(ctx.memb_id);
                 if let Some(parent_type_id) = parent_type_id_opt {
                     for abs_cfg_member in &parent_abs_cfg.cfg_members {
-                        let AbstractConfigKind::Member(sp_member_name_id, _) =
+                        let AbstractConfigKind::Member(sp_memb_name_id, memb_ast_meta_kind) =
                             abs_cfg_member.kind.clone()
                         else {
                             unreachable!()
                         };
 
                         seen_cfg_len += 1;
-                        seen_cfg_idents.push(sp_member_name_id.clone());
+                        seen_cfg_idents.push(sp_memb_name_id.clone());
 
                         // -- DEPTH HANDLING START --
                         // If the scope is complex, it's not override (which is an exception for deeper
@@ -1542,7 +1659,7 @@ impl<'res> TypeResolver<'res> {
                             )
                             // Pointing second nesting point
                             .add_annotation(
-                                sp_member_name_id.span,
+                                sp_memb_name_id.span,
                                 AnnotationKind::Primary,
                                 "Two level nesting is too deep".to_string().into(),
                             )
@@ -1562,7 +1679,7 @@ impl<'res> TypeResolver<'res> {
                         let memb_id = match member_lookup::lookup_member(
                             self.compiler,
                             parent_type_id,
-                            sp_member_name_id.inner,
+                            sp_memb_name_id.inner,
                             MemberLookupPattern::NoRestrictions,
                         ) {
                             // These are split so that the theoretical ok and err paths are able to reduce
@@ -1610,7 +1727,7 @@ impl<'res> TypeResolver<'res> {
                                             format!("Is type `{parent_member_fmtted_ty}`").into(),
                                         )
                                         .add_annotation(
-                                            sp_member_name_id.span,
+                                            sp_memb_name_id.span,
                                             AnnotationKind::Secondary,
                                             "Impossible member access".to_string().into(),
                                         )
@@ -1647,7 +1764,7 @@ impl<'res> TypeResolver<'res> {
                                                     ty_name_id,
                                                     sp_parent_name_id.span,
                                                 ),
-                                                not_found_name_id: sp_member_name_id.inner,
+                                                not_found_name_id: sp_memb_name_id.inner,
                                             });
 
                                         //TODO: RECURSIVELY TRACKING ENDS UP HERE FIX SHOULD BE APPLIED HERE IF
@@ -1669,7 +1786,7 @@ impl<'res> TypeResolver<'res> {
                                                 .into(),
                                         )
                                         .add_annotation(
-                                            sp_member_name_id.span,
+                                            sp_memb_name_id.span,
                                             AnnotationKind::Secondary,
                                             "Searched for this member".to_string().into(),
                                         )
@@ -1738,7 +1855,7 @@ impl<'res> TypeResolver<'res> {
                     // Only possible error for a complex semantic section. Members without types can
                     // only use options.
                     if let Some(first) = parent_abs_cfg.cfg_members.first() {
-                        let AbstractConfigKind::Member(sp_member_name_id, _) = first.kind.clone()
+                        let AbstractConfigKind::Member(sp_memb_name_id, _) = first.kind.clone()
                         else {
                             unreachable!()
                         };
@@ -1758,7 +1875,7 @@ impl<'res> TypeResolver<'res> {
                         )
                         // Also Into<String>?
                         .add_annotation(
-                            sp_member_name_id.span,
+                            sp_memb_name_id.span,
                             AnnotationKind::Secondary,
                             "Can't exist".to_string().into(),
                         );
