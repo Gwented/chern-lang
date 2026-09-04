@@ -146,7 +146,7 @@ fn scope_lookup_pref_found_test() {
     assert_eq!(found.found_sym_id, var_sym_id);
     assert_eq!(found.scope_found_in, neutral_scope_id);
     assert!(matches!(
-        compiler.symbols[found.found_sym_id].kind,
+        compiler.syms[found.found_sym_id].kind,
         SymbolKind::Variable(_)
     ));
 
@@ -166,7 +166,7 @@ fn scope_lookup_pref_found_test() {
     assert_eq!(found.found_sym_id, struct_sym_id);
     assert_eq!(found.scope_found_in, nest_scope_id);
     assert!(matches!(
-        compiler.symbols[found.found_sym_id].kind,
+        compiler.syms[found.found_sym_id].kind,
         SymbolKind::Type(_)
     ));
 }
@@ -271,7 +271,7 @@ fn ns_scope_of(compiler: &ScriptCompiler, type_id: TypeId) -> ScopeId {
         panic!("expected a builtin at {type_id:?}");
     };
 
-    match compiler.symbols[info.sym_id].associated_scope {
+    match compiler.syms[info.sym_id].associated_scope {
         Some(AssociatedScopeKind::Scope(scope_id)) => scope_id,
         other => panic!("builtin at {type_id:?} owns no namespace scope, got {other:?}"),
     }
@@ -303,7 +303,7 @@ fn scope_core_type_namespace_test() {
             assert_eq!(found.scope_found_in, scope_id);
             assert!(
                 matches!(
-                    compiler.symbols[found.found_sym_id].kind,
+                    compiler.syms[found.found_sym_id].kind,
                     SymbolKind::Variable(_)
                 ),
                 "`{name}::{bound_id:?}` should be a variable"

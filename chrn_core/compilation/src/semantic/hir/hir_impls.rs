@@ -160,7 +160,7 @@ impl ConfigMemberCommon {
 pub struct ConfigMember {
     pub common: ConfigMemberCommon,
     /// Expects `OptionAssignmentMember`
-    pub abs_stmts: Vec<ImplMemberId>,
+    pub ast_stmts: Vec<ImplMemberId>,
     // These configs are supposed to be usable by override too so maybe this becomes an enum where
     // it exposes metadata depending on override or not.
     pub meta: ConfigMemberMetadataKind,
@@ -180,13 +180,13 @@ impl ConfigMember {
         common: ConfigMemberCommon,
         meta: ConfigMemberMetadataKind,
         lookup_pat: ScopeLookupPattern,
-        abs_stmts: Vec<ImplMemberId>,
+        ast_stmts: Vec<ImplMemberId>,
         cfg_members: Vec<ImplMemberId>,
     ) -> ConfigMember {
         ConfigMember {
             common,
             meta,
-            abs_stmts,
+            ast_stmts,
             lookup_pat,
             cfg_members,
         }
@@ -228,7 +228,15 @@ impl ConfigMemberComplexMetadata {
 }
 
 #[derive(Debug)]
-pub struct ConfigMemberOverrideMetadata {}
+pub struct ConfigMemberOverrideMetadata {
+    linked_sym_id: SymbolId,
+}
+
+impl ConfigMemberOverrideMetadata {
+    pub fn new(linked_sym_id: SymbolId) -> Self {
+        Self { linked_sym_id }
+    }
+}
 
 // Would be:
 // Person {
@@ -313,6 +321,8 @@ impl OptionAssignmentMember {
 //but SymbolId<ExternType> is fully trust-worthy.
 #[derive(Debug)]
 pub struct MultiTypeAssignment {
+    /// `ImplMemberId` of `self`
+    pub impl_memb_id: ImplMemberId,
     pub to_assign: Vec<TypeId>,
     // Maybe there will be `ExternTypeId` usage but not sure about that.
     /// Expects `SymbolKind::ExternType`
@@ -320,8 +330,9 @@ pub struct MultiTypeAssignment {
 }
 
 impl MultiTypeAssignment {
-    pub fn new(to_assign: Vec<TypeId>, assign_to: SymbolId) -> Self {
+    pub fn new(impl_memb_id: ImplMemberId, to_assign: Vec<TypeId>, assign_to: SymbolId) -> Self {
         Self {
+            impl_memb_id,
             to_assign,
             assign_to,
         }

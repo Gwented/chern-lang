@@ -48,8 +48,11 @@ nest->
 // PROPS TEST START
 complex->
 
-override JAVA {
-}
+/*override JAVA {
+    types {
+        change i32 = java::int
+    }
+}*/
 
 /*override JAVA {
     types {}
@@ -61,7 +64,9 @@ for State {
         opt = 3
         // change self = u32?
         // More specifically, just a way to embed it to pick whatever type self is, rather than
-    override JAVA {}
+    override JAVA {
+types  {}
+    }
         // needing to pick the specific type
         // change i32,u32 = i32
     }

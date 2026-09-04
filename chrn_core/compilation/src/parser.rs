@@ -765,7 +765,7 @@ fn parse_nest_sect(
 fn parse_cfg_expr(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
-    mut root_meta_opt: Option<ConfigRootMetadataKind>,
+    mut current_root_meta_opt: Option<ConfigRootMetadataKind>,
     // It's only one depth so just reflecting it with one T/F state
     is_root: bool,
     interner: &Intern,
@@ -790,14 +790,17 @@ fn parse_cfg_expr(
     })?;
 
     let (lookup_pat, kind) =
-        handle_cfg_metadata(ctx, budget, &mut root_meta_opt, is_root, interner)?;
+        handle_cfg_metadata(ctx, budget, &mut current_root_meta_opt, is_root, interner)?;
     // May be a little too much of a "hack" but this is just, if `override` is used then all later
     // config metadata will be overidden. This is done because override needs to be inherited.
-    let root_meta_opt = if matches!(root_meta_opt, Some(ConfigRootMetadataKind::Override)) {
-        ConfigRootMetadataKind::Override.into()
-    } else {
-        None
-    };
+    // let root_meta_opt = if matches!(
+    //     current_root_meta_opt,
+    //     Some(ConfigRootMetadataKind::Override)
+    // ) {
+    //     ConfigRootMetadataKind::Override.into()
+    // } else {
+    //     None
+    // };
 
     // Allows for "=>" to notify that
     if ctx.peek_tok() != Token::OCurlyBracket && ctx.peek_tok() != Token::NotSlimArrow {
@@ -872,7 +875,7 @@ fn parse_cfg_expr(
             )
         {
             // for "inner {/*assignments*/}"
-            match parse_cfg_expr(ctx, budget, root_meta_opt, false, interner) {
+            match parse_cfg_expr(ctx, budget, current_root_meta_opt, false, interner) {
                 Ok(abs_cfg) => cfg_members.push(abs_cfg),
                 Err(_) => break,
             };
@@ -972,14 +975,14 @@ fn parse_ambiguous_expr(
 fn handle_cfg_metadata(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
-    root_meta_opt: &mut Option<ConfigRootMetadataKind>,
+    current_root_meta_opt: &mut Option<ConfigRootMetadataKind>,
     is_root: bool,
     interner: &Intern,
 ) -> Result<(ScopeLookupPattern, AbstractConfigKind), Token> {
     let new_meta = if is_root {
         //TODO: Suspicious
         // It can only be complex otherwise semantically so this default to complex.
-        let meta = if let Some(m) = root_meta_opt {
+        let meta = if let Some(m) = current_root_meta_opt {
             m.clone()
         } else {
             ConfigRootMetadataKind::Complex
@@ -1010,14 +1013,14 @@ fn handle_cfg_metadata(
             ctx.advance_tok();
 
             // Override needs to make all future cfg members override. Complex cannot do this.
-            *root_meta_opt = Some(ConfigRootMetadataKind::Override);
+            *current_root_meta_opt = Some(ConfigRootMetadataKind::Override);
             let meta = AstConfigOverrideMetadata::new();
             (
                 ScopeLookupPattern::NamespaceOnly,
                 AstConfigMemberMetadataKind::Override(meta),
             )
         } else {
-            let meta_kind = if let Some(ConfigRootMetadataKind::Override) = root_meta_opt {
+            let meta_kind = if let Some(ConfigRootMetadataKind::Override) = current_root_meta_opt {
                 AstConfigMemberMetadataKind::Override(AstConfigOverrideMetadata::new())
             } else {
                 AstConfigMemberMetadataKind::Complex(AstConfigComplexMetadata::new())

@@ -299,7 +299,7 @@ pub(crate) fn create_diag_builder_preset(
                         // I believe so since an associated scope scope means it's a symbol owned scope question mark.
                         let sym_owner = scope_info.sym_owner.expect("!");
 
-                        let sym_name_id = compiler.symbols[sym_owner].name_id;
+                        let sym_name_id = compiler.syms[sym_owner].name_id;
                         let sym_name = interner.search(sym_name_id);
 
                         format!("Namespace `{sym_name}` does not contain `{err_name}`")
@@ -368,7 +368,7 @@ pub(crate) fn create_diag_builder_preset(
             } => {
                 //TEST: Leaving it to compiler to consume the information since the presets are now
                 //far more semantically inclined.
-                let sym = &compiler.symbols[found_sym_id];
+                let sym = &compiler.syms[found_sym_id];
 
                 // There are no private symbols like this right now, for the compiler, I think?
                 let SymbolOrigin::Module(mod_id) = sym.sym_origin else {

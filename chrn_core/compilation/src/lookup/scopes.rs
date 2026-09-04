@@ -70,7 +70,7 @@ pub fn find_type_id(
                 .get(&target_name_id)
                 .copied()
             {
-                match &compiler.symbols[current_sym_id].kind {
+                match &compiler.syms[current_sym_id].kind {
                     SymbolKind::Type(type_id) => return Some(*type_id),
                     SymbolKind::Variable(var_id) => {
                         let type_id = match compiler.variables[*var_id].state {
@@ -144,7 +144,7 @@ pub fn find_sym_id_intrinsic(
                                 .get(&target_name_id)
                                 .copied()
                             {
-                                let associated = compiler.symbols[sym_id].associated_scope;
+                                let associated = compiler.syms[sym_id].associated_scope;
                                 return Some(SymbolLookupOutput::new(
                                     sym_id,
                                     scope_info.scope.scope_id,
@@ -227,7 +227,7 @@ pub fn find_sym_id(
                             Some(SymbolLookupOutput::new(sym_id, scope_info.scope.scope_id));
 
                         // Only looping again if not matched
-                        let flat = compiler.symbols[sym_id].kind.to_flat();
+                        let flat = compiler.syms[sym_id].kind.to_flat();
                         if !lookup_pref.is_preferred(flat) {
                             continue;
                         };
@@ -257,7 +257,7 @@ pub fn find_sym_id(
                             {
                                 //WARN: This is a bit dangerous since it kinda depends on preference
                                 //managers having this exact code.
-                                let flat = compiler.symbols[sym_id].kind.to_flat();
+                                let flat = compiler.syms[sym_id].kind.to_flat();
                                 default_return = Some(SymbolLookupOutput::new(
                                     sym_id,
                                     scope_info.scope.scope_id,
@@ -320,7 +320,7 @@ pub fn find_symbols_named<'a>(
     let mut found_syms: Vec<SymbolId> = Vec::new();
     let target_bytes = interner.search(target_name_id).as_bytes();
 
-    for sym in compiler.symbols.iter() {
+    for sym in compiler.syms.iter() {
         if exact_match {
             if sym.name_id == target_name_id {
                 found_syms.push(sym.sym_id);
@@ -345,7 +345,7 @@ pub fn find_symbols_named_ref<'a>(
     let mut found_syms: Vec<&Symbol> = Vec::new();
     let mut found_members: Vec<&MemberSymbolKind> = Vec::new();
 
-    for sym in &compiler.symbols.items {
+    for sym in &compiler.syms.items {
         if sym.name_id == target_name_id {
             found_syms.push(&sym);
         }
@@ -416,7 +416,7 @@ pub fn find_symbols_named_from_module_ref<'a>(
     for scope_id in &module.scopes {
         let scope = &compiler.scopes[*scope_id].scope;
         for sym_id in scope.table.interned_to_sym.values() {
-            let sym = &compiler.symbols[*sym_id];
+            let sym = &compiler.syms[*sym_id];
 
             if sym.name_id == target_name_id {
                 found_syms.push(&sym);

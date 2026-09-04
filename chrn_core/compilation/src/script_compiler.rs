@@ -69,7 +69,7 @@ pub struct ScriptCompiler {
     /// All expressions that were found
     pub exprs: Arena<ResolvedExpr, ExprId>,
     /// All symbols that were found
-    pub symbols: Arena<Symbol, SymbolId>,
+    pub syms: Arena<Symbol, SymbolId>,
     /// impls!
     pub impls: Arena<ImplHir, ImplId>,
     /// All symbols considered a "member" of another. This is here to serve the same purpose of a
@@ -77,7 +77,7 @@ pub struct ScriptCompiler {
     /// scale and would likely not benefit much from such a wide variety of collections.
     pub sym_members: Arena<MemberSymbolKind, MemberId>,
     /// Impl members
-    pub impl_members: Arena<ImplMemberKind, ImplMemberId>,
+    pub impl_membs: Arena<ImplMemberKind, ImplMemberId>,
     /// All variables that were found
     pub variables: Arena<VarDef, VariableId>,
     /// All user defined config. Is considered it's own class instead of a type since it
@@ -141,7 +141,7 @@ impl ScriptCompiler {
             exprs: Arena::with_capacity(ns_counts.variables),
             // Not sure if these should be put in their own separate constants comprised of their
             // own semantics or composed like this. Lets do nothing!
-            symbols: Arena::with_capacity(
+            syms: Arena::with_capacity(
                 core_helpers::CORE_BUILTIN_TYPES_DATASET.len()
                     + core_helpers::CORE_BOUNDARIES_DATASET.len()
                     + core_helpers::CORE_FUNCS_DATASET.len()
@@ -151,7 +151,7 @@ impl ScriptCompiler {
             ),
             sym_members: Arena::new(),
             impls: Arena::new(),
-            impl_members: Arena::new(),
+            impl_membs: Arena::new(),
             variables: Arena::with_capacity(ns_counts.variables),
             cfgs: Arena::new(),
             // ignore this
@@ -194,7 +194,7 @@ impl ScriptCompiler {
 
             // Pushing the module symbol inside of itself. So if we're indexing module `main`, we
             // would be pushing `main` inside of itself, once, as a known symbol.
-            let sym_id = SymbolId::new(self.symbols.len() as u32);
+            let sym_id = SymbolId::new(self.syms.len() as u32);
             let sym = Symbol::new(
                 current_mod_name_id,
                 sym_id,
@@ -214,7 +214,7 @@ impl ScriptCompiler {
                 .table
                 .interned_to_sym
                 .insert(current_mod_name_id, sym_id);
-            self.symbols.push(sym);
+            self.syms.push(sym);
 
             // Re-borrowing for iteration
             let module = &self.mods[current_mod_id];
@@ -239,7 +239,7 @@ impl ScriptCompiler {
                     .map(|i| i.inner)
                     .unwrap_or(import.name_id);
 
-                let import_sym_id = SymbolId::new(self.symbols.len() as u32);
+                let import_sym_id = SymbolId::new(self.syms.len() as u32);
                 // Pushing any imports found within the given module
                 let sym = Symbol::new(
                     import_ident_id,
@@ -261,14 +261,14 @@ impl ScriptCompiler {
                 //to filter out conflicting identifiers by default.
                 if !table.interned_to_sym.contains_key(&import_ident_id) {
                     table.interned_to_sym.insert(import_ident_id, import_sym_id);
-                    self.symbols.push(sym);
+                    self.syms.push(sym);
                 }
             }
         }
     }
 
     pub(super) fn get_typedef(&self, sym_id: SymbolId) -> &TypeDef {
-        match &self.symbols[sym_id] {
+        match &self.syms[sym_id] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &self.types[*type_id].ty {
                     Type::TypeDef(type_def) => type_def,
@@ -280,7 +280,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_typedef_mut(&mut self, sym_id: SymbolId) -> &mut TypeDef {
-        match &self.symbols[sym_id] {
+        match &self.syms[sym_id] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &mut self.types[*type_id].ty {
                     Type::TypeDef(type_def) => type_def,
@@ -292,7 +292,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_struct(&self, sym_id: SymbolId) -> &StructDef {
-        match &self.symbols[sym_id] {
+        match &self.syms[sym_id] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &self.types[*type_id].ty {
                     Type::Struct(struct_def) => struct_def,
@@ -304,7 +304,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_struct_mut(&mut self, sym_id: SymbolId) -> &mut StructDef {
-        match self.symbols.get_mut(sym_id).expect("misusage") {
+        match self.syms.get_mut(sym_id).expect("misusage") {
             sym_info => match &mut sym_info.kind {
                 SymbolKind::Type(type_id) => match &mut self.types[*type_id].ty {
                     Type::Struct(struct_def) => struct_def,
@@ -316,7 +316,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_func(&self, sym_id: SymbolId) -> &FuncDef {
-        match &self.symbols[sym_id] {
+        match &self.syms[sym_id] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &self.types[*type_id].ty {
                     Type::Func(func_def) => func_def,
@@ -328,7 +328,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_func_mut(&mut self, sym_id: SymbolId) -> &mut FuncDef {
-        match self.symbols.get_mut(sym_id).expect("misusage") {
+        match self.syms.get_mut(sym_id).expect("misusage") {
             sym_info => match &mut sym_info.kind {
                 SymbolKind::Type(type_id) => match &mut self.types[*type_id].ty {
                     Type::Func(func_def) => func_def,
@@ -340,7 +340,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_enum(&self, sym_id: SymbolId) -> &EnumDef {
-        match &self.symbols[sym_id] {
+        match &self.syms[sym_id] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &self.types[*type_id].ty {
                     Type::Enum(enum_def) => enum_def,
@@ -352,7 +352,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_enum_mut(&mut self, sym_id: SymbolId) -> &mut EnumDef {
-        match self.symbols.get_mut(sym_id).expect("misusage") {
+        match self.syms.get_mut(sym_id).expect("misusage") {
             sym_info => match &mut sym_info.kind {
                 SymbolKind::Type(type_id) => match &mut self.types[*type_id].ty {
                     Type::Enum(enum_def) => enum_def,
@@ -364,7 +364,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_alias(&self, sym_id: SymbolId) -> &AliasDef {
-        match &self.symbols[sym_id] {
+        match &self.syms[sym_id] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &self.types[*type_id].ty {
                     Type::Alias(alias_def) => alias_def,
@@ -376,7 +376,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_alias_mut(&mut self, sym_id: SymbolId) -> &mut AliasDef {
-        match self.symbols.get_mut(sym_id).expect("Misusage") {
+        match self.syms.get_mut(sym_id).expect("Misusage") {
             sym_info => match &mut sym_info.kind {
                 SymbolKind::Type(type_id) => match &mut self.types[*type_id].ty {
                     Type::Alias(alias_def) => alias_def,
@@ -389,7 +389,7 @@ impl ScriptCompiler {
 
     /// Assumes the symbol given is a variable, meaning a symbol with a value inside of it
     pub(super) fn get_var(&self, sym_id: SymbolId) -> &VarDef {
-        match &self.symbols[sym_id] {
+        match &self.syms[sym_id] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Variable(var_id) => &self.variables[*var_id],
                 _ => unreachable!(),
@@ -399,7 +399,7 @@ impl ScriptCompiler {
 
     /// Assumes the symbol given is a variable, meaning a symbol with a value inside of it
     pub(super) fn get_var_mut(&mut self, sym_id: SymbolId) -> &mut VarDef {
-        match &self.symbols[sym_id] {
+        match &self.syms[sym_id] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Variable(var_id) => &mut self.variables[*var_id],
                 _ => unreachable!(),
@@ -422,7 +422,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_directive(&self, sym_id: SymbolId) -> &Directive {
-        match &self.symbols[sym_id] {
+        match &self.syms[sym_id] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Directive(directive_id) => &self.directives[*directive_id],
                 _ => unreachable!(),
@@ -464,7 +464,7 @@ impl ScriptCompiler {
 
     /// Assumes the impl member given is a config member
     pub fn get_cfg_member(&self, impl_member_id: ImplMemberId) -> &ConfigMember {
-        match &self.impl_members[impl_member_id] {
+        match &self.impl_membs[impl_member_id] {
             ImplMemberKind::ConfigMember(cfg_member) => cfg_member,
             _ => unreachable!(),
         }
@@ -472,7 +472,7 @@ impl ScriptCompiler {
 
     /// Assumes the impl member given is a config member
     pub fn get_cfg_member_mut(&mut self, impl_member_id: ImplMemberId) -> &mut ConfigMember {
-        match &mut self.impl_members[impl_member_id] {
+        match &mut self.impl_membs[impl_member_id] {
             ImplMemberKind::ConfigMember(cfg_member) => cfg_member,
             _ => unreachable!(),
         }
@@ -499,7 +499,7 @@ impl ScriptCompiler {
         &self,
         impl_member_id: ImplMemberId,
     ) -> &OptionAssignmentRoot {
-        match &self.impl_members[impl_member_id] {
+        match &self.impl_membs[impl_member_id] {
             ImplMemberKind::OptAssignmentRoot(opt_root) => opt_root,
             _ => unreachable!(),
         }
@@ -510,7 +510,7 @@ impl ScriptCompiler {
         &mut self,
         impl_member_id: ImplMemberId,
     ) -> &mut OptionAssignmentRoot {
-        match &mut self.impl_members[impl_member_id] {
+        match &mut self.impl_membs[impl_member_id] {
             ImplMemberKind::OptAssignmentRoot(opt_root) => opt_root,
             _ => unreachable!(),
         }
@@ -521,7 +521,7 @@ impl ScriptCompiler {
         &self,
         impl_member_id: ImplMemberId,
     ) -> &OptionAssignmentMember {
-        match &self.impl_members[impl_member_id] {
+        match &self.impl_membs[impl_member_id] {
             ImplMemberKind::OptAssignmentMember(opt_member) => opt_member,
             _ => unreachable!(),
         }
@@ -532,7 +532,7 @@ impl ScriptCompiler {
         &mut self,
         impl_member_id: ImplMemberId,
     ) -> &mut OptionAssignmentMember {
-        match &mut self.impl_members[impl_member_id] {
+        match &mut self.impl_membs[impl_member_id] {
             ImplMemberKind::OptAssignmentMember(opt_member) => opt_member,
             _ => unreachable!(),
         }
@@ -542,7 +542,7 @@ impl ScriptCompiler {
     /// Assumes the symbol given has a `TypeId` attached. Will return a `TypeId` of `Unknown` if
     /// the `SymbolKind` is unknown.
     pub(super) fn extract_type_id(&self, sym_id: SymbolId) -> TypeId {
-        match &self.symbols[sym_id] {
+        match &self.syms[sym_id] {
             sym => match &sym.kind {
                 SymbolKind::Type(type_id) => *type_id,
                 SymbolKind::Variable(var_id) => match self.variables[*var_id].state {
@@ -559,7 +559,7 @@ impl ScriptCompiler {
     // Maybe return option?
     /// Attempts to get a `TypeId` out of the given symbol if possible
     pub(super) fn get_type_id_from_sym_id(&self, sym_id: SymbolId) -> Option<TypeId> {
-        match &self.symbols[sym_id] {
+        match &self.syms[sym_id] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => Some(*type_id),
                 SymbolKind::Variable(var_id) => match self.variables[*var_id].state {
@@ -597,7 +597,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_span_from_sym_id(&self, sym_id: SymbolId) -> Option<SourceSpan> {
-        match &self.symbols[sym_id].kind {
+        match &self.syms[sym_id].kind {
             SymbolKind::Type(type_id) => self.get_span_from_type_id(*type_id),
             SymbolKind::Variable(var_id) => match self.variables[*var_id].meta {
                 VariableMetadata::User(source_span) => source_span.into(),
@@ -664,10 +664,10 @@ impl ScriptCompiler {
 
         match &self.types[checked.inner].ty {
             Type::BuiltinTypeInfo(builtin_type) => builtin_type.ty.kind().name_id().into(),
-            Type::Struct(struct_def) => self.symbols[struct_def.sym_id].name_id.into(),
-            Type::Enum(enum_def) => self.symbols[enum_def.sym_id].name_id.into(),
+            Type::Struct(struct_def) => self.syms[struct_def.sym_id].name_id.into(),
+            Type::Enum(enum_def) => self.syms[enum_def.sym_id].name_id.into(),
             // Functions can't be declared
-            Type::Alias(alias_def) => self.symbols[alias_def.sym_id].name_id.into(),
+            Type::Alias(alias_def) => self.syms[alias_def.sym_id].name_id.into(),
             // WARN: Inconsistency
             Type::TypeDef(type_def) => type_def.name_id.into(),
             Type::Func(func) => func.name_id.into(),
@@ -685,7 +685,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_owner(&self, sym_id: SymbolId) -> ModuleId {
-        match self.symbols[sym_id].sym_origin {
+        match self.syms[sym_id].sym_origin {
             SymbolOrigin::Module(mod_id) => mod_id,
             //FIX: This isn't exactly true
             SymbolOrigin::Compiler => self.intrinsic_registry.core_mod_id,
@@ -838,7 +838,7 @@ impl ScriptCompiler {
     }
 
     fn register_directive(&mut self, interned_id: InternedId, directive: Directive) {
-        let sym_id = SymbolId::new(self.symbols.len() as u32);
+        let sym_id = SymbolId::new(self.syms.len() as u32);
         let directive_id = compiler_constants::directive_to_id(&directive);
         debug_assert_eq!(directive_id.id, self.directives.len() as u32);
 
@@ -853,7 +853,7 @@ impl ScriptCompiler {
             SymbolKind::Directive(directive_id),
         );
 
-        self.symbols.push(sym);
+        self.syms.push(sym);
         self.directives.push(directive);
     }
 
@@ -925,7 +925,7 @@ impl ScriptCompiler {
             match &base.kind {
                 InstantiationSymbolKind::Namespace(syms) => {
                     // Creating namespace as a symbol with the identifier associated first.
-                    let sym_id = SymbolId::new(self.symbols.len() as u32);
+                    let sym_id = SymbolId::new(self.syms.len() as u32);
                     let scope_id = ScopeId::new(self.scopes.len() as u16);
                     let sym_kind = SymbolKind::Namespace;
                     let associated_scope = AssociatedScopeKind::Scope(scope_id);
@@ -935,7 +935,7 @@ impl ScriptCompiler {
                     // Putting the found namespace into the current table's scope before recursively
                     // descending into new scope
                     let current_table = &mut self.scopes[current_scope_id].scope.table;
-                    self.symbols.push(sym);
+                    self.syms.push(sym);
                     current_table.interned_to_sym.insert(base.name_id, sym_id);
 
                     let scope = Scope::new(scope_id, ScopeType::Compiler, true, None);
@@ -951,12 +951,12 @@ impl ScriptCompiler {
                     self.register_instantiation_bases(scope_id, syms);
                 }
                 InstantiationSymbolKind::ExternType => {
-                    let sym_id = SymbolId::new(self.symbols.len() as u32);
+                    let sym_id = SymbolId::new(self.syms.len() as u32);
                     let sym_kind = SymbolKind::ExternType;
                     let sym = base.to_sym(sym_id, None, None, sym_kind);
 
                     let current_table = &mut self.scopes[current_scope_id].scope.table;
-                    self.symbols.push(sym);
+                    self.syms.push(sym);
                     current_table.interned_to_sym.insert(base.name_id, sym_id);
                 }
                 InstantiationSymbolKind::Variable(var) => {
@@ -974,7 +974,7 @@ impl ScriptCompiler {
         base: &InstantiationSymbolBase,
         var: &InstantiationVariable,
     ) {
-        let sym_id = SymbolId::new(self.symbols.len() as u32);
+        let sym_id = SymbolId::new(self.syms.len() as u32);
         let var_id = VariableId::new(self.variables.len() as u32);
 
         let sym = Symbol::new(
@@ -988,7 +988,7 @@ impl ScriptCompiler {
             SymbolKind::Variable(var_id),
         );
 
-        self.symbols.push(sym);
+        self.syms.push(sym);
         let current_table = &mut self.scopes[current_scope_id].scope.table;
         current_table.interned_to_sym.insert(base.name_id, sym_id);
 
@@ -1048,7 +1048,7 @@ impl ScriptCompiler {
         core_mod_id: ModuleId,
     ) {
         let type_id = TypeId::new(self.types.len() as u32);
-        let sym_id = SymbolId::new(self.symbols.len() as u32);
+        let sym_id = SymbolId::new(self.syms.len() as u32);
         let name_id = InternedId::new(core_func.name);
 
         let func_def = FuncDef::new(
@@ -1076,7 +1076,7 @@ impl ScriptCompiler {
             SymbolKind::Type(type_id),
         );
 
-        self.symbols.push(sym);
+        self.syms.push(sym);
         let table = &mut self.scopes[scope_id].scope.table;
         table.interned_to_sym.insert(name_id, sym_id);
     }
@@ -1112,7 +1112,7 @@ impl ScriptCompiler {
         core_mod_id: ModuleId,
     ) {
         let type_id = TypeId::new(self.types.len() as u32);
-        let sym_id = SymbolId::new(self.symbols.len() as u32);
+        let sym_id = SymbolId::new(self.syms.len() as u32);
 
         self.types.push(TypeInfo::new(
             Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, builtin_ty)),
@@ -1138,7 +1138,7 @@ impl ScriptCompiler {
             SymbolKind::Type(type_id),
         );
 
-        self.symbols.push(sym);
+        self.syms.push(sym);
         let table = &mut self.scopes[core_scope_id].scope.table;
         table.interned_to_sym.insert(name_id, sym_id);
 
@@ -1161,7 +1161,7 @@ impl ScriptCompiler {
         core_mod_id: ModuleId,
     ) {
         let type_id = TypeId::new(self.types.len() as u32);
-        let sym_id = SymbolId::new(self.symbols.len() as u32);
+        let sym_id = SymbolId::new(self.syms.len() as u32);
 
         self.types
             .push(TypeInfo::new(Type::Boundaries(flags), core_mod_id));
@@ -1176,7 +1176,7 @@ impl ScriptCompiler {
             SymbolKind::Type(type_id),
         );
 
-        self.symbols.push(sym);
+        self.syms.push(sym);
         let table = &mut self.scopes[core_scope_id].scope.table;
         table.interned_to_sym.insert(name_id, sym_id);
     }

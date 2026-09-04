@@ -2101,7 +2101,7 @@ impl RefCollector<'_> {
         if let AbstractConfigKind::Root(path) = &cfg.kind {
             self.path_segment_refs(path);
         }
-        for stmt in &cfg.abs_stmts {
+        for stmt in &cfg.ast_stmts {
             match stmt {
                 AbstractStmt::OptAssignment(opt) => self.expr_refs(&opt.array_expr),
                 //TODO: `ExternType` multi-assignment is unfinished in core; its

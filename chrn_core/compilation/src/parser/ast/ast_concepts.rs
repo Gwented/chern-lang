@@ -561,7 +561,7 @@ pub struct AbstractConfig {
     //// Config specific to the origin of this metadata. ONLY `ConfigMember` can have this.
     pub kind: AbstractConfigKind,
     /// Configuration options for the current parent to apply
-    pub abs_stmts: Vec<AstStmt>,
+    pub ast_stmts: Vec<AstStmt>,
     /// `ScopeType` that should be looked within for the given identifier
     /// Can only be `ScopeLookupPattern::OnlyVar/NamespaceOnly`
     pub lookup_pat: ScopeLookupPattern,
@@ -573,13 +573,13 @@ impl AbstractConfig {
     pub fn new(
         kind: AbstractConfigKind,
         lookup_pat: ScopeLookupPattern,
-        abs_stmts: Vec<AstStmt>,
+        ast_stmts: Vec<AstStmt>,
         cfg_members: Vec<AbstractConfig>,
     ) -> AbstractConfig {
         AbstractConfig {
             kind,
             lookup_pat,
-            abs_stmts,
+            ast_stmts,
             cfg_members,
         }
     }

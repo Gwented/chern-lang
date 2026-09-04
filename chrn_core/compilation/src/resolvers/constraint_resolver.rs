@@ -67,7 +67,7 @@ impl<'a> ConstraintResolver<'a> {
         for comp_unit in env.compilation_syms.iter().cloned() {
             match comp_unit {
                 CompilationUnit::Symbol(sym_id) => {
-                    match self.compiler.symbols[sym_id].kind {
+                    match self.compiler.syms[sym_id].kind {
                         // This split is more so, users can define these set of symbols, and users cannot
                         // define the unreacables.
                         SymbolKind::Type(type_id) => match &self.compiler.types[type_id].ty {
@@ -115,7 +115,7 @@ impl<'a> ConstraintResolver<'a> {
     // also present
     fn resolve_var(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
         // Not sure what this might need checked yet other than privacy
-        let ast_id = self.compiler.symbols[parent_sym_id]
+        let ast_id = self.compiler.syms[parent_sym_id]
             .ast_id
             .expect("Should be user symbols only");
         let abs_var = env.ast_info.get_var(ast_id);
@@ -492,7 +492,7 @@ impl<'a> ConstraintResolver<'a> {
     }
 
     fn resolve_typedef(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
-        let ast_id = self.compiler.symbols[parent_sym_id]
+        let ast_id = self.compiler.syms[parent_sym_id]
             .ast_id
             .expect("Should be user symbols only");
         let abs_typedef = env.ast_info.get_typedef(ast_id);
@@ -603,7 +603,7 @@ impl<'a> ConstraintResolver<'a> {
     // Alias should probably be ran first by default
     // Also needs to infer it's own constraints
     fn resolve_alias(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
-        let ast_id = self.compiler.symbols[parent_sym_id]
+        let ast_id = self.compiler.syms[parent_sym_id]
             .ast_id
             .expect("Should be user symbols only");
         let abs_alias = env.ast_info.get_alias(ast_id);
@@ -879,7 +879,7 @@ impl<'a> ConstraintResolver<'a> {
         //field arg and cond settings.
         //same for enums.
 
-        let ast_id = self.compiler.symbols[parent_sym_id]
+        let ast_id = self.compiler.syms[parent_sym_id]
             .ast_id
             .expect("Should be user symbols only");
         let abs_struct = env.ast_info.get_struct(ast_id);
@@ -985,7 +985,7 @@ impl<'a> ConstraintResolver<'a> {
     }
 
     fn resolve_enum(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
-        let ast_id = self.compiler.symbols[parent_sym_id]
+        let ast_id = self.compiler.syms[parent_sym_id]
             .ast_id
             .expect("Should be user symbols only");
         let abs_enum = env.ast_info.get_enum(ast_id);

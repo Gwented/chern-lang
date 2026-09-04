@@ -73,7 +73,7 @@ fn core_builtin_type_id_alignment() {
             "builtin at CORE id {core_id} does not match the table entry"
         );
 
-        let sym = &compiler.symbols[info.sym_id];
+        let sym = &compiler.syms[info.sym_id];
         assert_eq!(
             sym.name_id,
             InternedId::new(interned),
@@ -116,7 +116,7 @@ fn core_boundaries_follow_builtins() {
         assert_eq!(found, flags, "boundary at {type_id:?} does not match");
 
         let sym = compiler
-            .symbols
+            .syms
             .items
             .iter()
             .find(|sym| sym.name_id == InternedId::new(interned))
@@ -196,7 +196,7 @@ fn core_funcs_are_symbols_in_core_scope() {
             .get(&name_id)
             .unwrap_or_else(|| panic!("core func {:?} is not in the core scope", core_func.kind));
 
-        let sym = &compiler.symbols[sym_id];
+        let sym = &compiler.syms[sym_id];
 
         assert_eq!(sym.name_id, name_id, "symbol name for {:?}", core_func.kind);
         assert!(
@@ -278,8 +278,8 @@ fn startup_reservations_match_loaded_data() {
         + DIRECTIVES_DATASET.len()
         + expected_module_symbol_count
         + ns_counts.symbols;
-    assert_eq!(compiler.symbols.len(), expected_symbol_count);
-    assert_eq!(compiler.symbols.capacity(), expected_symbol_count);
+    assert_eq!(compiler.syms.len(), expected_symbol_count);
+    assert_eq!(compiler.syms.capacity(), expected_symbol_count);
 
     assert_eq!(compiler.directives.len(), DIRECTIVES_DATASET.len());
     assert_eq!(compiler.directives.capacity(), DIRECTIVES_DATASET.len());
@@ -347,8 +347,8 @@ fn startup_reservations_include_user_module_symbols() {
         + expected_module_symbol_count
         + ns_counts.symbols;
 
-    assert_eq!(compiler.symbols.len(), expected_symbol_count);
-    assert_eq!(compiler.symbols.capacity(), expected_symbol_count);
+    assert_eq!(compiler.syms.len(), expected_symbol_count);
+    assert_eq!(compiler.syms.capacity(), expected_symbol_count);
     let expected_scope_count = compiler.mods.len() + 1 + ns_counts.scopes;
     assert_eq!(compiler.scopes.len(), expected_scope_count);
     assert_eq!(compiler.scopes.capacity(), expected_scope_count);
@@ -372,7 +372,7 @@ fn registered_constant<'a>(
     name_id: InternedId,
 ) -> RegisteredConstant<'a> {
     let sym_id = compiler.get_scope(scope_id).scope.table.interned_to_sym[&name_id];
-    let sym = &compiler.symbols[sym_id];
+    let sym = &compiler.syms[sym_id];
 
     let SymbolKind::Variable(var_id) = sym.kind else {
         panic!(
@@ -412,7 +412,7 @@ fn builtin_ns_scope(
         );
     };
 
-    match compiler.symbols[info.sym_id].associated_scope {
+    match compiler.syms[info.sym_id].associated_scope {
         Some(AssociatedScopeKind::Scope(scope_id)) => {
             assert!(
                 !ns.is_empty(),
@@ -740,7 +740,7 @@ fn core_namespace_arenas_are_reserved_exactly() {
 
     for (idx, var) in compiler.variables.iter().enumerate() {
         let var_id = VariableId::new(idx as u32);
-        let sym = &compiler.symbols[var.sym_id];
+        let sym = &compiler.syms[var.sym_id];
 
         assert!(
             matches!(sym.kind, SymbolKind::Variable(found) if found == var_id),

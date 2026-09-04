@@ -206,7 +206,7 @@ impl NamespaceResolver<'_> {
         // Why was this message put here???
         // This will all likely fail eventually
         let scope_id = self.compiler.push_scope(scope_type, env.current_mod);
-        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+        let sym_id = SymbolId::new(self.compiler.syms.len() as u32);
 
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
@@ -244,7 +244,7 @@ impl NamespaceResolver<'_> {
             SymbolKind::Type(type_def_type_id),
         );
 
-        self.compiler.symbols.push(symbol);
+        self.compiler.syms.push(symbol);
 
         let type_def_info = TypeInfo::new(Type::TypeDef(type_def), env.current_mod);
         self.compiler.types.push(type_def_info);
@@ -266,7 +266,7 @@ impl NamespaceResolver<'_> {
         scope_type: ScopeType,
         env: &RegistrationEnv,
     ) -> SymbolId {
-        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+        let sym_id = SymbolId::new(self.compiler.syms.len() as u32);
         let scope_id = self.compiler.push_scope(scope_type, env.current_mod);
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
@@ -298,7 +298,7 @@ impl NamespaceResolver<'_> {
             SymbolKind::Type(type_id),
         );
 
-        self.compiler.symbols.push(symbol);
+        self.compiler.syms.push(symbol);
 
         let ty_info = TypeInfo::new(Type::Struct(struct_def), env.current_mod);
         self.compiler.types.push(ty_info);
@@ -317,7 +317,7 @@ impl NamespaceResolver<'_> {
         env: &RegistrationEnv,
     ) -> SymbolId {
         let scope_id = self.compiler.push_scope(scope_type, env.current_mod);
-        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+        let sym_id = SymbolId::new(self.compiler.syms.len() as u32);
         let type_id = TypeId::new(self.compiler.types.len() as u32);
 
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
@@ -349,7 +349,7 @@ impl NamespaceResolver<'_> {
             SymbolKind::Type(type_id),
         );
 
-        self.compiler.symbols.push(symbol);
+        self.compiler.syms.push(symbol);
 
         let ty_info = TypeInfo::new(Type::Enum(enum_def), env.current_mod);
         self.compiler.types.push(ty_info);
@@ -368,7 +368,7 @@ impl NamespaceResolver<'_> {
         env: &RegistrationEnv,
     ) -> SymbolId {
         let scope_id = self.compiler.push_scope(scope_type, env.current_mod);
-        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+        let sym_id = SymbolId::new(self.compiler.syms.len() as u32);
         let type_id = TypeId::new(self.compiler.types.len() as u32);
 
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
@@ -549,7 +549,7 @@ impl NamespaceResolver<'_> {
             SymbolKind::Type(type_id),
         );
 
-        self.compiler.symbols.push(symbol);
+        self.compiler.syms.push(symbol);
 
         let ty_info = TypeInfo::new(Type::Alias(alias_def), env.current_mod);
         self.compiler.types.push(ty_info);
@@ -570,7 +570,7 @@ impl NamespaceResolver<'_> {
         scope_type: ScopeType,
         env: &RegistrationEnv,
     ) -> SymbolId {
-        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+        let sym_id = SymbolId::new(self.compiler.syms.len() as u32);
         let scope_id = self.compiler.push_scope(scope_type, env.current_mod);
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
@@ -614,7 +614,7 @@ impl NamespaceResolver<'_> {
             SymbolKind::Variable(var_id),
         );
 
-        self.compiler.symbols.push(symbol);
+        self.compiler.syms.push(symbol);
         self.compiler.types.push(ty_info);
         self.compiler.variables.push(var);
 
@@ -635,10 +635,10 @@ impl NamespaceResolver<'_> {
         env: &RegistrationEnv,
     ) {
         //NOTE: Suspicious
-        let orig_sym = &self.compiler.symbols[orig_sym_id];
+        let orig_sym = &self.compiler.syms[orig_sym_id];
         let orig_ast_id = orig_sym.ast_id.expect("Core should not be resolved");
 
-        let dup_ast_id = self.compiler.symbols[dup_sym_id]
+        let dup_ast_id = self.compiler.syms[dup_sym_id]
             .ast_id
             .expect("Core should not be resolved");
 

@@ -6,7 +6,6 @@
 use chrn_utils::{
     arena::Arena,
     id_types::{SymbolId, TypeId},
-    loop_abort,
 };
 
 use crate::{
@@ -14,10 +13,22 @@ use crate::{
     script_compiler::ScriptCompiler,
     semantic::hir::{
         hir_concepts::{Type, TypeInfo},
-        hir_symbols::SymbolKind,
+        hir_symbols::{Symbol, SymbolKind, SymbolKindFlat},
     },
     walk_type_id_deferred,
 };
+//TODO: Typechecker helpers?
+
+// TEST: Not done yet
+// Rename to lost and found?
+///
+pub fn is_expected_sym(
+    syms: &Arena<Symbol, SymbolId>,
+    expected: SymbolKindFlat,
+    sym_id: SymbolId,
+) -> bool {
+    syms[sym_id].kind.to_flat() == expected
+}
 
 //What about just a general walk deferred function that prevents this same code from being written
 //everywhere
@@ -37,7 +48,7 @@ pub fn check_field_or_variant(types: &Arena<TypeInfo, TypeId>, mut type_id: Type
 
 /// Returns `true` if the type is a valid config root candidate, `false` if invalid
 pub fn check_cfg_root(compiler: &ScriptCompiler, sym_id: SymbolId) -> bool {
-    let sym = &compiler.symbols[sym_id];
+    let sym = &compiler.syms[sym_id];
     match sym.kind {
         SymbolKind::Type(mut type_id) => {
             let checked = walk_type_id_deferred!(&compiler.types, type_id);
@@ -64,9 +75,11 @@ pub fn check_cfg_root(compiler: &ScriptCompiler, sym_id: SymbolId) -> bool {
     }
 }
 
+// This doesn't really have use because config members are required to search for other intrinsics
+// anyways so a failure to find a symbol is the only type of failure. As of right now.
 /// Returns `true` if the type is a valid override config member candidate, `false` if invalid
 pub fn check_cfg_memb_override(compiler: &ScriptCompiler, sym_id: SymbolId) -> bool {
-    let sym = &compiler.symbols[sym_id];
+    let sym = &compiler.syms[sym_id];
     match sym.kind {
         // Only override section symbols can access a namespace in it's config root.
         SymbolKind::Namespace => true,
@@ -77,9 +90,10 @@ pub fn check_cfg_memb_override(compiler: &ScriptCompiler, sym_id: SymbolId) -> b
     }
 }
 
+// Not used either...
 /// Returns `true` if the type is a valid complex config member candidate, `false` if invalid
 pub fn check_cfg_memb_complex(compiler: &ScriptCompiler, sym_id: SymbolId) -> bool {
-    let sym = &compiler.symbols[sym_id];
+    let sym = &compiler.syms[sym_id];
     match sym.kind {
         SymbolKind::Type(mut type_id) => {
             let checked = walk_type_id_deferred!(&compiler.types, type_id);

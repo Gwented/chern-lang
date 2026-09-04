@@ -36,7 +36,7 @@ fn type_resolver_simple_test() {
 
     // The undeclared type's typedef inner type should remain unknown
     let undeclared_sym = compiler
-        .symbols
+        .syms
         .iter()
         .find(|s| interner.search(s.name_id) == "undeclared_type")
         .expect("undeclared_type symbol should exist");
@@ -58,7 +58,7 @@ fn type_resolver_simple_test() {
 
     // primitive should still resolve correctly despite the error
     let primitive_sym = compiler
-        .symbols
+        .syms
         .iter()
         .find(|s| interner.search(s.name_id) == "primitive")
         .expect("primitive symbol should exist");
@@ -95,7 +95,7 @@ fn type_resolver_simple_test() {
 
     // Verify Thing is a struct with no fields
     let thing_sym = compiler
-        .symbols
+        .syms
         .iter()
         .find(|s| interner.search(s.name_id) == "Thing")
         .expect("Thing symbol should exist");
@@ -115,7 +115,7 @@ fn type_resolver_simple_test() {
 
     // Verify primitive typedef resolves to a known type (i32)
     let primitive_sym = compiler
-        .symbols
+        .syms
         .iter()
         .find(|s| interner.search(s.name_id) == "primitive")
         .expect("primitive symbol should exist");
@@ -136,7 +136,7 @@ fn type_resolver_simple_test() {
 
     // Verify declared_type typedef resolves to Thing's struct type
     let declared_type_sym = compiler
-        .symbols
+        .syms
         .iter()
         .find(|s| interner.search(s.name_id) == "declared_type")
         .expect("declared_type symbol should exist");
@@ -169,7 +169,7 @@ fn type_resolver_complex_test() {
     assert!(summary.err_count() == 0, "Type resolution failed");
 
     let constant_sym = compiler
-        .symbols
+        .syms
         .iter()
         .find(|s| interner.search(s.name_id) == "CONSTANT")
         .expect("CONSTANT symbol should exist");
@@ -243,7 +243,7 @@ fn root_option_expr_and_value<'a>(
 ) -> (&'a ResolvedExpr, &'a ValueInfo) {
     let option = resolution
         .compiler
-        .impl_members
+        .impl_membs
         .iter()
         .find_map(|member| match member {
             ImplMemberKind::OptAssignmentRoot(option)

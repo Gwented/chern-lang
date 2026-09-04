@@ -90,7 +90,7 @@ pub enum SymbolKind {
 impl SymbolKind {
     // This is getting obscure now...
     pub fn to_fmt(compiler: &ScriptCompiler, sym_id: SymbolId) -> ChrnClassifier {
-        let sym = &compiler.symbols[sym_id];
+        let sym = &compiler.syms[sym_id];
         match &sym.kind {
             SymbolKind::Type(type_id) => Type::to_fmt(&compiler.types, *type_id),
             SymbolKind::Variable(_) => ChrnClassifier::Variable,

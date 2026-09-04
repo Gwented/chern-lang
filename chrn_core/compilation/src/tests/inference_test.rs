@@ -22,7 +22,7 @@ fn core_only_compiler() -> ScriptCompiler {
 
 /// Returns the symbol id of the first core function alongside its declared return type.
 fn first_core_func(compiler: &ScriptCompiler) -> (SymbolId, TypeId) {
-    for symbol in compiler.symbols.iter() {
+    for symbol in compiler.syms.iter() {
         if let SymbolKind::Type(type_id) = &symbol.kind {
             if let Type::Func(func_def) = &compiler.types[*type_id].ty {
                 return (symbol.sym_id, func_def.ret_type);

@@ -86,7 +86,15 @@ impl ConfigMemberContextKind {
     pub(super) const fn memb_id(&self) -> Option<MemberId> {
         match self {
             ConfigMemberContextKind::Complex(ctx) => Some(ctx.memb_id),
-            ConfigMemberContextKind::Override(ctx) => None,
+            ConfigMemberContextKind::Override(_) => None,
+        }
+    }
+
+    /// Attempts to get `SymbolId` out of `self`
+    pub(super) const fn sym_id(&self) -> Option<SymbolId> {
+        match self {
+            ConfigMemberContextKind::Override(ctx) => Some(ctx.sym_id),
+            ConfigMemberContextKind::Complex(_) => None,
         }
     }
 }
@@ -104,10 +112,12 @@ impl ConfigMemberComplexContext {
 }
 
 #[derive(Debug)]
-pub(super) struct ConfigMemberOverrideContext {}
+pub(super) struct ConfigMemberOverrideContext {
+    pub sym_id: SymbolId,
+}
 
-impl<'a> ConfigMemberOverrideContext {
-    pub(super) const fn new() -> Self {
-        Self {}
+impl ConfigMemberOverrideContext {
+    pub(super) const fn new(sym_id: SymbolId) -> Self {
+        Self { sym_id }
     }
 }

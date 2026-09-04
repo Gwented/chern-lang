@@ -65,10 +65,10 @@ pub fn resolve_type_expr(
                 lookup_pref,
             ) {
                 Some(SymbolLookupOutput { found_sym_id, .. }) => {
-                    let found_sym = &compiler.symbols[found_sym_id];
+                    let found_sym = &compiler.syms[found_sym_id];
                     match found_sym.kind {
                         SymbolKind::Type(type_id) => {
-                            let sym = &compiler.symbols[found_sym_id];
+                            let sym = &compiler.syms[found_sym_id];
 
                             // If the symbol being looked up is private and the owner isn't the current
                             // module then failed
@@ -213,7 +213,7 @@ fn resolve_generic(
                 };
                 //TEST:
 
-                let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+                let sym_id = SymbolId::new(compiler.syms.len() as u32);
                 let type_id = TypeId::new(compiler.types.len() as u32);
 
                 let (interned_id, ty) = if kind == BuiltinTypeKind::List {
@@ -245,7 +245,7 @@ fn resolve_generic(
                 //WARN: Still not sure about this
                 let ty_info = TypeInfo::new(ty, compiler.intrinsic_registry.core_mod_id);
                 compiler.types.push(ty_info);
-                compiler.symbols.push(sym);
+                compiler.syms.push(sym);
 
                 return TypeExprResult::Type(type_id);
             }
@@ -267,7 +267,7 @@ fn resolve_generic(
                     }
                 }
 
-                let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+                let sym_id = SymbolId::new(compiler.syms.len() as u32);
                 let type_id = TypeId::new(compiler.types.len() as u32);
 
                 //WARN: Definitely not sure about this setup
@@ -289,7 +289,7 @@ fn resolve_generic(
 
                 let ty_info = TypeInfo::new(tuple, compiler.intrinsic_registry.core_mod_id);
                 compiler.types.push(ty_info);
-                compiler.symbols.push(sym);
+                compiler.syms.push(sym);
 
                 return TypeExprResult::Type(type_id);
             }
@@ -327,7 +327,7 @@ fn resolve_generic(
                 };
 
                 //TEST: TEST:
-                let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+                let sym_id = SymbolId::new(compiler.syms.len() as u32);
                 let type_id = TypeId::new(compiler.types.len() as u32);
 
                 let sym = Symbol::new(
@@ -348,7 +348,7 @@ fn resolve_generic(
 
                 let ty_info = TypeInfo::new(map, compiler.intrinsic_registry.core_mod_id);
                 compiler.types.push(ty_info);
-                compiler.symbols.push(sym);
+                compiler.syms.push(sym);
 
                 return TypeExprResult::Type(type_id);
             }
@@ -416,7 +416,7 @@ pub fn resolve_static_access(
                     lookup_pat,
                     lookup_pref,
                 ) {
-                    let sym = &compiler.symbols[found_sym_id];
+                    let sym = &compiler.syms[found_sym_id];
                     match sym.associated_scope {
                         Some(new_scope) => {
                             // Transitioning to next namespace

@@ -572,11 +572,11 @@ fn parse_complex_config_root() {
 
     assert_eq!(interner.search(cfg_name_id(cfg)), "MyConfig");
     assert!(matches!(cfg.kind, AbstractConfigKind::Root(_, _)));
-    assert_eq!(cfg.abs_stmts.len(), 1);
+    assert_eq!(cfg.ast_stmts.len(), 1);
     assert!(cfg.cfg_members.is_empty());
 
     // Option assignment: option = [42]
-    let AstStmt::OptAssignment(opt) = &cfg.abs_stmts[0] else {
+    let AstStmt::OptAssignment(opt) = &cfg.ast_stmts[0] else {
         panic!("expected option assignment");
     };
     assert_eq!(interner.search(opt.name_id), "option");
@@ -621,8 +621,8 @@ fn parse_complex_config_nested() {
 
     let inner = &cfg.cfg_members[0];
     assert_eq!(interner.search(cfg_name_id(inner)), "inner");
-    assert_eq!(inner.abs_stmts.len(), 1);
-    let AstStmt::OptAssignment(opt) = &inner.abs_stmts[0] else {
+    assert_eq!(inner.ast_stmts.len(), 1);
+    let AstStmt::OptAssignment(opt) = &inner.ast_stmts[0] else {
         panic!("expected option assignment");
     };
     assert_eq!(interner.search(opt.name_id), "opt");
@@ -980,8 +980,8 @@ fn parse_expr_array() {
     let (ast, interner) = parse_text(text);
 
     let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
-    assert_eq!(cfg.abs_stmts.len(), 1);
-    let AstStmt::OptAssignment(opt) = &cfg.abs_stmts[0] else {
+    assert_eq!(cfg.ast_stmts.len(), 1);
+    let AstStmt::OptAssignment(opt) = &cfg.ast_stmts[0] else {
         panic!("expected option assignment");
     };
     assert_eq!(interner.search(opt.name_id), "opt");
@@ -1524,8 +1524,8 @@ fn parse_complex_member_override_config() {
         "inner config should be a Member, got {:?}",
         inner.kind
     );
-    assert_eq!(inner.abs_stmts.len(), 1);
-    let AstStmt::OptAssignment(opt) = &inner.abs_stmts[0] else {
+    assert_eq!(inner.ast_stmts.len(), 1);
+    let AstStmt::OptAssignment(opt) = &inner.ast_stmts[0] else {
         panic!("expected option assignment");
     };
     assert_eq!(interner.search(opt.name_id), "opt");
@@ -1537,11 +1537,11 @@ fn parse_multiple_option_assignments() {
     let (ast, interner) = parse_text(text);
 
     let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
-    assert_eq!(cfg.abs_stmts.len(), 2);
-    let AstStmt::OptAssignment(opt1) = &cfg.abs_stmts[0] else {
+    assert_eq!(cfg.ast_stmts.len(), 2);
+    let AstStmt::OptAssignment(opt1) = &cfg.ast_stmts[0] else {
         panic!("expected option assignment");
     };
-    let AstStmt::OptAssignment(opt2) = &cfg.abs_stmts[1] else {
+    let AstStmt::OptAssignment(opt2) = &cfg.ast_stmts[1] else {
         panic!("expected option assignment");
     };
     assert_eq!(interner.search(opt1.name_id), "opt1");
@@ -1554,7 +1554,7 @@ fn parse_complex_config_with_trailing_comma() {
     let (ast, interner) = parse_text(text);
 
     let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
-    assert_eq!(cfg.abs_stmts.len(), 1);
+    assert_eq!(cfg.ast_stmts.len(), 1);
 }
 
 #[test]

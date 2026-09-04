@@ -15,4 +15,11 @@ pub static JAVA_NAMESPACE: [InstantiationSymbolBase; 1] = [new_extern_namespace(
     &TYPES_NAMESPACE,
 )];
 
-pub static TYPES_NAMESPACE: [InstantiationSymbolBase; 1] = [new_extern_sym(intern::INTERNED_INT)];
+pub static TYPES_NAMESPACE: [InstantiationSymbolBase; 1] = [new_extern_namespace(
+    intern::INTERNED_JAVA_LOWER,
+    &JAVA_LOWER_NAMESPACE,
+)];
+
+/// `java` which paths to `java::short`, `java::int`, etsy.
+pub static JAVA_LOWER_NAMESPACE: [InstantiationSymbolBase; 1] =
+    [new_extern_sym(intern::INTERNED_INT)];
