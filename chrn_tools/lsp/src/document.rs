@@ -6,7 +6,7 @@
 //!
 //! | Constant              | Indexed by                  | Length |
 //! |-----------------------|-----------------------------|--------|
-//! | [`KEYWORD_DOCS`]      | `Keyword as usize`          | 14     |
+//! | [`KEYWORD_DOCS`]      | `Keyword as usize`          | 15     |
 //! | [`BUILTIN_TYPE_DOCS`] | `BuiltinTypeKind as usize`  | 27     |
 //! | [`FUNC_DOCS`]         | `FuncKind as usize`         | 7      |
 //! | [`DIRECTIVE_DOCS`]    | key name (`&str`)           | 6      |
@@ -90,7 +90,7 @@ impl Document {
 /// Hover documentation for each Chern language keyword.
 ///
 /// Indexed by [`Keyword`] discriminant via [`Document::keyword_docs`].
-pub static KEYWORD_DOCS: [Document; 14] = [
+pub static KEYWORD_DOCS: [Document; 15] = [
     Document {
         key: "struct",
         description: "Defines a data structure",
@@ -162,15 +162,17 @@ pub static KEYWORD_DOCS: [Document; 14] = [
     },
     Document {
         key: "complex->",
-        description: "Defines serialization properties for types declared",
+        description: "Defines serialization properties for declared types; config roots use `for`, and language-specific overrides use `override`",
         example: Some(
-            "```chrn\nnest->\n\tstruct Cat {\n\t\tname: str\n\t\tstressLevel: StressLevel\n\t}\n\tenum StressLevel { HIGH LOW }\ncomplex->\n\tCat {\n\t\tcases = [\"snake_case\", \"UpperCamelCase\"]\n\t\tstressLevel {\n\t\t\tidents = [\"mood\"]\n\t\t\tHIGH { idents = [\"stressed\"] }\n\t\t}\n\t}\n```",
+            "```chrn\nnest->\n\tstruct Person {\n\t\tname: str\n\t\tage: u8\n\t}\ncomplex->\n\tfor Person {\n\t\tcases = [\"snake_case\", \"UpperCamelCase\"]\n\t}\n```",
         ),
     },
     Document {
-        key: "override->",
-        description: "Unimplemented",
-        example: Some("```chrn\n// Not yet implemented\n```"),
+        key: "override",
+        description: "Overrides language-specific serialization defaults within a `complex->` configuration",
+        example: Some(
+            "```chrn\ncomplex->\n\toverride JAVA {\n\t\ttypes {\n\t\t\ti8, i16 = java::int\n\t\t}\n\t}\n```",
+        ),
     },
     Document {
         key: "in",
@@ -178,6 +180,11 @@ pub static KEYWORD_DOCS: [Document; 14] = [
         example: Some(
             "```chrn\n@def\n\tlet result = let x = 10 in x * 2\n\t// result = 20\n@end\n```",
         ),
+    },
+    Document {
+        key: "for",
+        description: "Selects a type as a config root within a `complex->` section",
+        example: Some("```chrn\ncomplex->\n\tfor Person {\n\t\tidents = \"Human\"\n\t}\n```"),
     },
 ];
 
@@ -424,20 +431,18 @@ pub static CONFIG_OPTION_DOCS: [Document; 3] = [
         key: "cases",
         description: "Case conventions accepted when matching serialized names",
         example: Some(
-            "```chrn\ncomplex->\n\tCat {\n\t\tcases = [\"snake_case\", \"UpperSnakeCase\"]\n\t}\n```",
+            "```chrn\ncomplex->\n\tfor Person {\n\t\tcases = [\"snake_case\", \"UpperSnakeCase\"]\n\t}\n```",
         ),
     },
     Document {
         key: "idents",
         description: "Alternate identifiers the serialized value may be matched to",
-        example: Some(
-            "```chrn\ncomplex->\n\tCat {\n\t\tstressLevel {\n\t\t\tHIGH { idents = [\"Stressed\"] }\n\t\t}\n\t}\n```",
-        ),
+        example: Some("```chrn\ncomplex->\n\tfor Person {\n\t\tidents = [\"Human\"]\n\t}\n```"),
     },
     Document {
         key: "default_val",
         description: "Default value used when data is absent",
-        example: Some("```chrn\ncomplex->\n\tCat {\n\t\tage { default_val = 0 }\n\t}\n```"),
+        example: Some("```chrn\ncomplex->\n\tfor Person {\n\t\tage { default_val = 0 }\n\t}\n```"),
     },
 ];
 
@@ -449,7 +454,7 @@ mod tests {
     fn test_keyword_docs_len() {
         assert_eq!(
             KEYWORD_DOCS.len(),
-            14,
+            15,
             "KEYWORD_DOCS must have one entry per Keyword variant"
         );
     }

@@ -238,6 +238,9 @@ dependencies = [
 [[package]]
 name = "filesc"
 version = "0.1.0"
+dependencies = [
+ "algoc",
+]
 
 [[package]]
 name = "form_urlencoded"

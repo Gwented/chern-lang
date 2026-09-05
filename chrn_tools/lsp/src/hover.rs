@@ -42,7 +42,7 @@ use compilation::lexer::token::Token as ScriptToken;
 use compilation::lookup::scopes::scopes_concepts::AssociatedScopeKind;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::Type;
-use compilation::semantic::hir::hir_impls::ImplMemberKind;
+use compilation::semantic::hir::hir_impls::{ConfigMemberMetadataKind, ImplMemberKind};
 use compilation::semantic::hir::hir_symbols::{
     MemberSymbolKind, SymbolKind, SymbolOrigin, VariableState,
 };
@@ -207,9 +207,9 @@ fn identifier_hover(
         .unwrap_or_default();
 
     if hover_text.is_empty()
-        && let Some(module) = compiler.mods.iter().find(|m| m.name_id == id)
+        && let Some(mod_id) = crate::state::visible_module(compiler, id)
     {
-        hover_text = module_hover(state, compiler, module, id);
+        hover_text = module_hover(state, compiler, &compiler.mods[mod_id], id);
     }
 
     if hover_text.is_empty()
@@ -260,7 +260,7 @@ fn symbol_hover(
     compiler: &ScriptCompiler,
     sym_id: chrn_utils::id_types::SymbolId,
 ) -> String {
-    let Some(sym) = compiler.symbols.get(sym_id) else {
+    let Some(sym) = compiler.syms.get(sym_id) else {
         return String::new();
     };
     let interner = &state.interner;
@@ -270,12 +270,12 @@ fn symbol_hover(
         SymbolKind::Variable(var_id) => match compiler.variables[var_id].state {
             VariableState::Known(val_id) => {
                 let val_info = &compiler.values[val_id];
-                let type_str = strip_struct_enum_prefix(&format_type(
+                let type_str = format_type(
                     &compiler.types[val_info.type_id].ty,
                     compiler,
                     interner,
-                    true,
-                ));
+                    TypeDisplay::Reference,
+                );
                 let val_str = match &val_info.const_val {
                     Some(v) => format_value(v, interner),
                     None => "unknown".to_string(),
@@ -299,8 +299,13 @@ fn symbol_hover(
                     interner.search(compiler.mods[mod_id].name_id)
                 )
             }
-            AssociatedScopeKind::Scope(_) => {
-                format!("namespace **{}**", interner.search(sym.name_id))
+            AssociatedScopeKind::Scope(scope_id) => {
+                let namespace_kind = if compiler.scopes[scope_id].scope.is_intrinsic {
+                    "intrinsic namespace"
+                } else {
+                    "namespace"
+                };
+                format!("{} **{}**", namespace_kind, interner.search(sym.name_id))
             }
         },
         SymbolKind::Directive(_) => {
@@ -337,7 +342,7 @@ fn type_symbol_hover(
     match &ty_info.ty {
         Type::TypeDef(type_def) => {
             let inner = &compiler.types[type_def.type_id].ty;
-            let shallow = strip_struct_enum_prefix(&format_type(inner, compiler, interner, true));
+            let shallow = format_type(inner, compiler, interner, TypeDisplay::Reference);
             format!("**typedef**: {}", shallow)
         }
         Type::BuiltinTypeInfo(builtin_info) => {
@@ -345,9 +350,9 @@ fn type_symbol_hover(
         }
         Type::Func(func_def) => Document::func_docs(func_def.kind).compose(),
         _ => {
-            let t = format_type(&ty_info.ty, compiler, interner, false);
+            let t = format_type(&ty_info.ty, compiler, interner, TypeDisplay::Declaration);
             let is_named_decl =
-                t.starts_with("struct ") || t.starts_with("enum ") || t.starts_with("alias ");
+                matches!(ty_info.ty, Type::Struct(_) | Type::Enum(_) | Type::Alias(_));
             if !is_named_decl {
                 return format!("type: {}", t);
             }
@@ -388,12 +393,12 @@ fn field_hover(
         && let Some(member_id) = sdef.fields.get(field_idx)
         && let Some(MemberSymbolKind::Field(field_repre)) = compiler.sym_members.get(*member_id)
     {
-        let type_str = strip_struct_enum_prefix(&format_type(
+        let type_str = format_type(
             &compiler.types[field_repre.type_id].ty,
             compiler,
             &state.interner,
-            true,
-        ));
+            TypeDisplay::Reference,
+        );
         return format!("{}: {}", field_name, type_str);
     }
 
@@ -423,12 +428,12 @@ fn variant_hover(
         && let Some(MemberSymbolKind::Variant(variant_repre)) = compiler.sym_members.get(*member_id)
         && let Some(vty_id) = variant_repre.type_id
     {
-        let type_str = strip_struct_enum_prefix(&format_type(
+        let type_str = format_type(
             &compiler.types[vty_id].ty,
             compiler,
             &state.interner,
-            true,
-        ));
+            TypeDisplay::Reference,
+        );
         return format!("{}: {}", variant_name, type_str);
     }
 
@@ -444,7 +449,7 @@ fn owner_decl<'a>(
     &'a compilation::semantic::hir::hir_symbols::Symbol,
     &'a compilation::parser::ast::ast_concepts::AstInfo,
 )> {
-    let sym = compiler.symbols.get(owner_sym_id)?;
+    let sym = compiler.syms.get(owner_sym_id)?;
     sym.ast_id?;
     let owner_id = match sym.sym_origin {
         SymbolOrigin::Module(mid) => mid.id as usize,
@@ -497,17 +502,27 @@ fn config_member_hover(
     member_id: chrn_utils::id_types::ImplMemberId,
 ) -> String {
     let cfg_member = compiler.get_cfg_member(member_id);
-    let name = state.interner.search(cfg_member.name_id);
+    let name = state.interner.search(cfg_member.common.name_id);
     let type_of = |type_id| {
-        strip_struct_enum_prefix(&format_type(
+        format_type(
             &compiler.types[type_id].ty,
             compiler,
             &state.interner,
-            true,
-        ))
+            TypeDisplay::Reference,
+        )
     };
 
-    match compiler.sym_members.get(cfg_member.linked_member_id) {
+    // Only `complex` members link to a struct/enum field or variant. `override`
+    // members link to an intrinsic symbol, which carries no member to describe.
+    let linked_memb_id = match &cfg_member.meta {
+        ConfigMemberMetadataKind::Complex(meta) => Some(meta.linked_memb_id),
+        ConfigMemberMetadataKind::Override(_) => None,
+    };
+    let Some(linked_memb_id) = linked_memb_id else {
+        return format!("Configures **{}**: Unknown", name);
+    };
+
+    match compiler.sym_members.get(linked_memb_id) {
         Some(MemberSymbolKind::Field(field_repre)) => format!(
             "Configures field **{}**: `{}`",
             name,
@@ -527,7 +542,7 @@ fn config_option_hover(
     compiler: &ScriptCompiler,
     member_id: chrn_utils::id_types::ImplMemberId,
 ) -> String {
-    let name_id = match &compiler.impl_members[member_id] {
+    let name_id = match &compiler.impl_membs[member_id] {
         ImplMemberKind::OptAssignmentRoot(opt) => opt.name_id,
         ImplMemberKind::OptAssignmentMember(opt) => opt.name_id,
         _ => return String::new(),
@@ -538,38 +553,34 @@ fn config_option_hover(
         .unwrap_or_else(|| format!("**{}**\n\nUnknown option", name))
 }
 
-/// Formats a HIR [`Type`] as a human-readable string.
-///
-/// # Parameters
-/// * `ty`       — The type to format.
-/// * `compiler` — The script compiler holding the type and symbol arenas.
-/// * `interner` — Used to recover string names from interned IDs.
-/// * `shallow`  — When `true`, struct and enum types are rendered as just
-///   `"struct Name"` / `"enum Name"` without expanding fields or variants.
-///   This is used for nested type display to avoid exponential output.
-///
-/// # Recursive types
-/// Container types (`List`, `Set`, `Map`, `Tuple`) and `TypeDef` / `Deferred`
-/// wrappers call this function recursively with `shallow = true` for inner types.
-fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow: bool) -> String {
+#[derive(Clone, Copy)]
+enum TypeDisplay {
+    Declaration,
+    Reference,
+}
+
+/// Render a declaration at the top level and names in nested type positions.
+/// Nested structs, enums and aliases stay compact and do not expand recursively.
+fn format_type(
+    ty: &Type,
+    compiler: &ScriptCompiler,
+    interner: &Intern,
+    style: TypeDisplay,
+) -> String {
     match ty {
-        // The inner `Type::BuiltinTypeInfo(builtin_info)` match binds `builtin_info: &BuiltinTypeInfo`.
-        // Access the inner `BuiltinType` via `builtin_info.ty`.
-        // The destructured `TypeId`s are `&TypeId` references.
-        // The `Arena` index takes `TypeId` by value, so each binding must be dereferenced.
         Type::BuiltinTypeInfo(builtin_info) => match &builtin_info.ty {
             BuiltinType::List(type_id) => {
                 let inner = &compiler.types[*type_id].ty;
                 format!(
                     "List<{}>",
-                    strip_struct_enum_prefix(&format_type(inner, compiler, interner, true))
+                    format_type(inner, compiler, interner, TypeDisplay::Reference)
                 )
             }
             BuiltinType::Set(type_id) => {
                 let inner = &compiler.types[*type_id].ty;
                 format!(
                     "Set<{}>",
-                    strip_struct_enum_prefix(&format_type(inner, compiler, interner, true))
+                    format_type(inner, compiler, interner, TypeDisplay::Reference)
                 )
             }
             BuiltinType::Map(kid, vid) => {
@@ -577,8 +588,8 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
                 let v = &compiler.types[*vid].ty;
                 format!(
                     "Map<{}, {}>",
-                    strip_struct_enum_prefix(&format_type(k, compiler, interner, true)),
-                    strip_struct_enum_prefix(&format_type(v, compiler, interner, true))
+                    format_type(k, compiler, interner, TypeDisplay::Reference),
+                    format_type(v, compiler, interner, TypeDisplay::Reference)
                 )
             }
             BuiltinType::Tuple(type_ids) => {
@@ -586,7 +597,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
                     .iter()
                     .map(|type_id| {
                         let ty = &compiler.types[*type_id].ty;
-                        strip_struct_enum_prefix(&format_type(ty, compiler, interner, true))
+                        format_type(ty, compiler, interner, TypeDisplay::Reference)
                     })
                     .collect();
                 format!("Tuple<{}>", elems.join(", "))
@@ -596,13 +607,13 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
         },
         Type::Struct(struct_def) => {
             let name = compiler
-                .symbols
+                .syms
                 .get(struct_def.sym_id)
                 .map(|sym| interner.search(sym.name_id))
                 .unwrap_or("<struct>");
 
-            if shallow {
-                return format!("struct {}", name);
+            if matches!(style, TypeDisplay::Reference) {
+                return name.to_string();
             }
 
             if struct_def.fields.is_empty() {
@@ -615,9 +626,8 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
                         MemberSymbolKind::Field(field) => {
                             let field_name = interner.search(field.name_id);
                             let field_ty = &compiler.types[field.type_id].ty;
-                            let field_ty_str = strip_struct_enum_prefix(&format_type(
-                                field_ty, compiler, interner, true,
-                            ));
+                            let field_ty_str =
+                                format_type(field_ty, compiler, interner, TypeDisplay::Reference);
                             Some(format!("\t{}: {}", field_name, field_ty_str))
                         }
                         _ => None,
@@ -628,13 +638,13 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
         }
         Type::Enum(enum_def) => {
             let name = compiler
-                .symbols
+                .syms
                 .get(enum_def.sym_id)
                 .map(|sym| interner.search(sym.name_id))
                 .unwrap_or("<enum>");
 
-            if shallow {
-                return format!("enum {}", name);
+            if matches!(style, TypeDisplay::Reference) {
+                return name.to_string();
             }
 
             if enum_def.variants.is_empty() {
@@ -649,9 +659,12 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
 
                             if let Some(type_id) = v.type_id {
                                 let variant_ty = &compiler.types[type_id].ty;
-                                let variant_ty_str = strip_struct_enum_prefix(&format_type(
-                                    variant_ty, compiler, interner, true,
-                                ));
+                                let variant_ty_str = format_type(
+                                    variant_ty,
+                                    compiler,
+                                    interner,
+                                    TypeDisplay::Reference,
+                                );
                                 Some(format!("\t{}: {}", variant_name, variant_ty_str))
                             } else {
                                 Some(format!("\t{}", variant_name))
@@ -675,13 +688,13 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
         }
         Type::Alias(alias_def) => {
             let name = compiler
-                .symbols
+                .syms
                 .get(alias_def.sym_id)
                 .map(|sym| interner.search(sym.name_id))
                 .unwrap_or("<alias>");
 
-            if shallow {
-                return format!("alias {}", name);
+            if matches!(style, TypeDisplay::Reference) {
+                return name.to_string();
             }
 
             let params: Vec<String> = alias_def
@@ -689,17 +702,16 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
                 .iter()
                 .map(|p| {
                     let p_name = compiler
-                        .symbols
+                        .syms
                         .get(p.sym_id)
                         .map(|sym| interner.search(sym.name_id))
                         .unwrap_or("<param>");
-                    let p_constraint = alias_def
-                        .ty_constraints
-                        .to_fmt_vec()
-                        .iter()
-                        .map(|f| f.to_string())
-                        .collect::<Vec<_>>()
-                        .join(" | ");
+                    let p_constraint = format_type(
+                        &compiler.types[p.type_id].ty,
+                        compiler,
+                        interner,
+                        TypeDisplay::Reference,
+                    );
                     format!("{}: {}", p_name, p_constraint)
                 })
                 .collect();
@@ -708,7 +720,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
         }
         Type::TypeDef(type_def) => {
             let inner = &compiler.types[type_def.type_id].ty;
-            format_type(inner, compiler, interner, shallow)
+            format_type(inner, compiler, interner, style)
         }
         Type::Boundaries(flags) => flags
             .to_fmt_vec()
@@ -717,25 +729,10 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
             .collect::<Vec<_>>()
             .join(" + "),
         Type::Deferred(type_id) => {
-            // `Type::Deferred(type_id)` here matches through `&Type`, so `type_id: &TypeId`.
             let inner = &compiler.types[*type_id].ty;
-            format_type(inner, compiler, interner, shallow)
+            format_type(inner, compiler, interner, style)
         }
         Type::Unknown => "Unknown".into(),
-    }
-}
-
-/// Strips the `"struct "` or `"enum "` prefix produced by [`format_type`] when used
-/// as a nested type reference (e.g. inside `List<...>` or as a field type).
-///
-/// Returns the input unchanged if neither prefix is present.
-fn strip_struct_enum_prefix(s: &str) -> String {
-    if let Some(stripped) = s.strip_prefix("struct ") {
-        stripped.to_string()
-    } else if let Some(stripped) = s.strip_prefix("enum ") {
-        stripped.to_string()
-    } else {
-        s.to_string()
     }
 }
 

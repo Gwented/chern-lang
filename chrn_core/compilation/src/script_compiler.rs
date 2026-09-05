@@ -40,8 +40,8 @@ use crate::{
         hir_concepts::{BuiltinTypeInfo, Table, Type, TypeInfo},
         hir_exprs::{ExprHir, ResolvedExpr, ResolvedExprMetadata},
         hir_impls::{
-            ConfigMember, ConfigRoot, ImplHir, ImplHirKind, ImplMemberKind, OptionAssignmentMember,
-            OptionAssignmentRoot,
+            ConfigMember, ConfigRoot, ImplHir, ImplHirKind, ImplMemberKind, MultiTypeAssignment,
+            OptionAssignmentMember, OptionAssignmentRoot,
         },
         hir_symbols::{
             AliasDef, EnumDef, FieldRepre, FuncDef, MemberSymbolKind, StructDef, Symbol,
@@ -463,16 +463,16 @@ impl ScriptCompiler {
     }
 
     /// Assumes the impl member given is a config member
-    pub fn get_cfg_member(&self, impl_member_id: ImplMemberId) -> &ConfigMember {
-        match &self.impl_membs[impl_member_id] {
+    pub fn get_cfg_member(&self, impl_memb_id: ImplMemberId) -> &ConfigMember {
+        match &self.impl_membs[impl_memb_id] {
             ImplMemberKind::ConfigMember(cfg_member) => cfg_member,
             _ => unreachable!(),
         }
     }
 
     /// Assumes the impl member given is a config member
-    pub fn get_cfg_member_mut(&mut self, impl_member_id: ImplMemberId) -> &mut ConfigMember {
-        match &mut self.impl_membs[impl_member_id] {
+    pub fn get_cfg_member_mut(&mut self, impl_memb_id: ImplMemberId) -> &mut ConfigMember {
+        match &mut self.impl_membs[impl_memb_id] {
             ImplMemberKind::ConfigMember(cfg_member) => cfg_member,
             _ => unreachable!(),
         }
@@ -497,9 +497,9 @@ impl ScriptCompiler {
     /// Assumes the member symbol given is a field
     pub(super) fn get_opt_assignment_root(
         &self,
-        impl_member_id: ImplMemberId,
+        impl_memb_id: ImplMemberId,
     ) -> &OptionAssignmentRoot {
-        match &self.impl_membs[impl_member_id] {
+        match &self.impl_membs[impl_memb_id] {
             ImplMemberKind::OptAssignmentRoot(opt_root) => opt_root,
             _ => unreachable!(),
         }
@@ -508,9 +508,9 @@ impl ScriptCompiler {
     /// Assumes the member symbol given is a field
     pub(super) fn get_opt_assignment_root_mut(
         &mut self,
-        impl_member_id: ImplMemberId,
+        impl_memb_id: ImplMemberId,
     ) -> &mut OptionAssignmentRoot {
-        match &mut self.impl_membs[impl_member_id] {
+        match &mut self.impl_membs[impl_memb_id] {
             ImplMemberKind::OptAssignmentRoot(opt_root) => opt_root,
             _ => unreachable!(),
         }
@@ -519,9 +519,9 @@ impl ScriptCompiler {
     /// Assumes the member symbol given is a field
     pub(super) fn get_opt_assignment_member(
         &self,
-        impl_member_id: ImplMemberId,
+        impl_memb_id: ImplMemberId,
     ) -> &OptionAssignmentMember {
-        match &self.impl_membs[impl_member_id] {
+        match &self.impl_membs[impl_memb_id] {
             ImplMemberKind::OptAssignmentMember(opt_member) => opt_member,
             _ => unreachable!(),
         }
@@ -530,10 +530,32 @@ impl ScriptCompiler {
     /// Assumes the member symbol given is a field
     pub(super) fn get_opt_assignment_member_mut(
         &mut self,
-        impl_member_id: ImplMemberId,
+        impl_memb_id: ImplMemberId,
     ) -> &mut OptionAssignmentMember {
-        match &mut self.impl_membs[impl_member_id] {
+        match &mut self.impl_membs[impl_memb_id] {
             ImplMemberKind::OptAssignmentMember(opt_member) => opt_member,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Assumes the member symbol given is a field
+    pub(super) fn get_multi_type_assign(
+        &mut self,
+        impl_memb_id: ImplMemberId,
+    ) -> &MultiTypeAssignment {
+        match &self.impl_membs[impl_memb_id] {
+            ImplMemberKind::MultiTypeAssignment(multi) => multi,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Assumes the member symbol given is a field
+    pub(super) fn get_multi_type_assign_mut(
+        &mut self,
+        impl_memb_id: ImplMemberId,
+    ) -> &mut MultiTypeAssignment {
+        match &mut self.impl_membs[impl_memb_id] {
+            ImplMemberKind::MultiTypeAssignment(multi) => multi,
             _ => unreachable!(),
         }
     }
@@ -566,7 +588,6 @@ impl ScriptCompiler {
                     VariableState::ReservedTypeSlot(type_id) => Some(type_id),
                     VariableState::Known(val_id) => Some(self.values[val_id].type_id),
                 },
-                // Not a type, just a symbol with a scope
                 SymbolKind::ExternType | SymbolKind::Directive(_) | SymbolKind::Namespace => None,
             },
         }
@@ -589,13 +610,21 @@ impl ScriptCompiler {
     }
 
     /// Attempts to get a `TypeId` out of the given `MemberId` if possible
-    pub(super) fn get_type_id_from_member_id(&self, member_id: MemberId) -> Option<TypeId> {
+    pub(super) fn get_type_id_from_memb_id(&self, member_id: MemberId) -> Option<TypeId> {
         match &self.sym_members[member_id] {
             MemberSymbolKind::Field(field_repre) => Some(field_repre.type_id),
             MemberSymbolKind::Variant(variant_repre) => variant_repre.type_id,
         }
     }
 
+    pub(super) fn get_sym_id_from_memb_id(&self, member_id: MemberId) -> Option<TypeId> {
+        match &self.sym_members[member_id] {
+            MemberSymbolKind::Field(field_repre) => Some(field_repre.type_id),
+            MemberSymbolKind::Variant(variant_repre) => variant_repre.type_id,
+        }
+    }
+
+    /// Attempts to get `SourceSpan` out of the given `SymbolId`
     pub(super) fn get_span_from_sym_id(&self, sym_id: SymbolId) -> Option<SourceSpan> {
         match &self.syms[sym_id].kind {
             SymbolKind::Type(type_id) => self.get_span_from_type_id(*type_id),

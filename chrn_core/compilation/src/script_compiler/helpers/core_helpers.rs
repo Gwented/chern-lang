@@ -368,43 +368,6 @@ pub static CORE_FUNCS_DATASET: [CoreFunc; 7] = [
     ),
 ];
 
-// /// Contains `Numeric` type expectations of implementers. Strictly compile-time.
-// /// The intent is to go to the target index, then insert the `Numeric` constants
-// pub static CORE_NUMERIC_TARGETS: [u32; 15] = [
-//     CORE_I8,
-//     CORE_U8,
-//     CORE_I16,
-//     CORE_U16,
-//     // (intern::INTERNED_F16, BuiltinType::F16),
-//     CORE_I32,
-//     CORE_U32,
-//     CORE_F32,
-//     CORE_I64,
-//     CORE_U64,
-//     CORE_F64,
-//     CORE_I128,
-//     CORE_U128,
-//     CORE_F128,
-//     CORE_SIZED,
-//     CORE_UNSIZED,
-// ];
-
-// pub struct NumericTarget {
-//     pub core_id: u32,
-//     pub max: InstantiationSymbolBase,
-//     pub min: InstantiationSymbolBase,
-// }
-//
-// impl NumericTarget {
-//     pub const fn new(
-//         core_id: u32,
-//         max: InstantiationSymbolBase,
-//         min: InstantiationSymbolBase,
-//     ) -> Self {
-//         Self { core_id, max, min }
-//     }
-// }
-
 //TEST: This seems a little odd
 
 const MIN_IDENT: InternedId = InternedId::new(intern::INTERNED_MIN_UPPER);

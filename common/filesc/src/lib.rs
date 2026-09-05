@@ -6,6 +6,8 @@ use std::{
     ptr,
 };
 
+use algoc::mixer;
+
 const MAX_TEMP_FILE_CREATION_ATTEMPTS: u16 = 500;
 
 /// Writes `to_write` into the file `dest` at the front.
@@ -92,21 +94,19 @@ pub fn create_unique_file(
     let mut created_temp_name = false;
 
     let mut hasher = hash::DefaultHasher::new();
+    ptr::hash(&hasher, &mut hasher);
+    hasher.write_u32(std::process::id());
 
-    for _ in 0..MAX_TEMP_FILE_CREATION_ATTEMPTS {
-        ptr::hash(&hasher, &mut hasher);
+    for seed in 0..MAX_TEMP_FILE_CREATION_ATTEMPTS {
+        hasher.write_u16(seed);
         let hash = hasher.finish();
 
-        // Extra allocation but worth it for clarity
-        //
-        // Not sure about the `.tmp` here because when thinking of the term tmp, it sounds like a
-        // file that will be removed on next boot, cleaned routinely, etsy.
         path.push(format!(
-            "{}{hash}.part",
-            tmp_file_name_prefix.unwrap_or_default()
+            "{}{:#x}.part",
+            tmp_file_name_prefix.unwrap_or_default(),
+            hash,
         ));
 
-        // Checks if generated name exists before trying
         if !path.exists() {
             created_temp_name = true;
             break;
@@ -122,51 +122,5 @@ pub fn create_unique_file(
         return Err(custom_err);
     }
 
-    // -- FILE OPERATIONS --
     File::create_new(&path)
 }
-
-// Doing a bit too much or no?
-// UM
-// Maybe we can drop the formatting part
-// Also please rename it from fopen
-
-// / Convenience function that opens a file and ensures it's not a directory before returning it,
-// / which is not the default behavior unless explicitly checked.
-// /
-// / Returns with formatted error messages for a select few kinds of `std::io::Error`s.
-// /
-// / On `Ok` returns file
-// / On `Err` returns (std::io::Error, Conventional Message) which allows for the deduplication of
-// / making error messages in regards to IO errors.
-// pub fn fopen(path: &Path) -> Result<File, (io::Error, String)> {
-//     match fs::File::open(path) {
-//         Ok(_) if path.is_dir() => {
-//             let msg = format!("The path \"{}\" is a directory", path.display());
-//             let err = io::Error::new(
-//                 io::ErrorKind::IsADirectory,
-//                 "The path \"{}\" is a directory",
-//             );
-//             Err((err, msg))
-//         }
-//         Ok(f) => Ok(f),
-//         Err(e) => {
-//             let msg = match e.kind() {
-//                 io::ErrorKind::NotFound => {
-//                     format!("No file found in path \"{}\"", path.display())
-//                 }
-//                 io::ErrorKind::IsADirectory => {
-//                     format!("The path \"{}\" is a directory", path.display())
-//                 }
-//                 io::ErrorKind::PermissionDenied => {
-//                     format!(
-//                         "The file \"{}\" does not have read permissions enabled",
-//                         path.display()
-//                     )
-//                 }
-//                 e => e.to_string(),
-//             };
-//             Err((e, msg))
-//         }
-//     }
-// }

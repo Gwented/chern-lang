@@ -1,0 +1,74 @@
+/*
+// chrn if it didn't use sections
+
+let abtest = 3
+
+var varthing1: str
+var varthing2: u64
+
+struct Structure {
+    field1: i32
+    field2: u32
+    field3: u64
+}
+
+struct varthing1 {}
+
+for Structure {
+    cases = ["UpperSnakeCase", "camelCase"]
+    field1 {
+        // Assuming `self` is going to exist
+        override C=>types {self = i32}
+    }
+    field2 {
+        override C=>types {self = f32}
+    }
+    field3 {
+        override C=>types {self = u16}
+    }
+}
+
+// Could fix this type of issue by just innately separating namespaces to where we still have the same split
+// a section would.
+for var varthing1 {}
+
+// Nest probably wouldn't exist as a keyword so we'd just default to non-vars
+for varthing1 {}
+
+*/
+// -- SECTION BASED --
+
+let abtest = 3
+
+var->
+varthing1: str
+varthing2: u64
+
+nest->
+struct Structure {
+    field1: i32
+    field2: u32
+    field3: u64
+}
+
+struct varthing1 {}
+
+complex->
+for Structure {
+    cases = ["UpperSnakeCase", "camelCase"]
+    field1 {
+        // Assuming `self` is going to exist
+        // NOTE: Namespaces don't recommend the symbols they contain, they should!
+        override JAVA=>types {change i32 = java::int}
+    }
+    field2 {
+        override C=>types {self = f32}
+    }
+    field3 {
+        override C=>types {self = u16}
+    }
+}
+
+for var varthing1 {}
+
+for varthing1 {}

@@ -16,7 +16,8 @@ use crate::{
     },
     parser::ast::ast_concepts::{
         AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractEnum,
-        AbstractImpl, AbstractStruct, AbstractTypeDef, AbstractVar, Item,
+        AbstractImpl, AbstractStruct, AbstractTypeDef, AbstractVar, AstConfigMemberMetadataKind,
+        Item,
     },
     resolvers::{resolver_env::RegistrationEnv, resolver_state::ResolverState},
     script_compiler::ScriptCompiler,
@@ -24,7 +25,10 @@ use crate::{
         compilation_unit::CompilationUnit,
         hir::{
             hir_concepts::{Type, TypeInfo},
-            hir_impls::{ConfigRoot, ConfigRootCommon, ImplHir, ImplHirKind},
+            hir_impls::{
+                ConfigRoot, ConfigRootCommon, ConfigRootKind, ConfigRootMetadataKind, ImplHir,
+                ImplHirKind,
+            },
             hir_symbols::{
                 AliasDef, EnumDef, StructDef, Symbol, SymbolKind, SymbolOrigin, TypeDef, VarDef,
                 VariableMetadata, VariableState,
@@ -175,9 +179,19 @@ impl NamespaceResolver<'_> {
 
         let common = ConfigRootCommon::new(impl_id, cfg_root_id, abs_cfg.lookup_pat, Vec::new());
 
+        let AbstractConfigKind::Root(_, abs_kind) = &abs_cfg.kind else {
+            unreachable!()
+        };
+
+        // NOTE: Subject to change
+        let kind = match abs_kind {
+            ConfigRootMetadataKind::Complex => ConfigRootKind::Complex,
+            ConfigRootMetadataKind::Override => ConfigRootKind::Override,
+        };
+
         // Purposefully not allocating capacity because this stage is just instantiating, with no
         // promise that the present vec will be appended or moved in any form.
-        let cfg_root = ConfigRoot::new(common, None, Vec::new());
+        let cfg_root = ConfigRoot::new(common, None, Vec::new(), kind);
 
         let impl_hir = ImplHir::new(
             impl_id,

@@ -44,7 +44,9 @@ use compilation::module::module_concepts::ModuleState;
 use compilation::parser::ast::ast_concepts::AbstractConfigKind;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::Type;
-use compilation::semantic::hir::hir_impls::{ConfigRootKind, ImplHirKind, ImplMemberKind};
+use compilation::semantic::hir::hir_impls::{
+    ConfigMemberMetadataKind, ConfigRoot, ConfigRootMetadataKind, ImplHirKind, ImplMemberKind,
+};
 use compilation::semantic::hir::hir_symbols::{Symbol, SymbolKind, VariableState};
 use parking_lot::RwLock;
 use std::time::Duration;
@@ -441,11 +443,18 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
         }
         SymbolKind::Namespace => match sym.associated_scope.expect("Should have namespace") {
             scopes_concepts::AssociatedScopeKind::Module(_) => CompletionItemKind::MODULE,
-            scopes_concepts::AssociatedScopeKind::Scope(_) => CompletionItemKind::VARIABLE,
+            scopes_concepts::AssociatedScopeKind::Scope(scope_id) => {
+                if compiler.scopes[scope_id].scope.is_intrinsic {
+                    CompletionItemKind::CLASS
+                } else {
+                    CompletionItemKind::VARIABLE
+                }
+            }
         },
-        //TODO: `ExternType` is unfinished in core; a keyword icon is the closest
-        //stand-in until it carries a type of its own.
-        SymbolKind::Directive(_) | SymbolKind::ExternType => CompletionItemKind::KEYWORD,
+        SymbolKind::Directive(_) => CompletionItemKind::KEYWORD,
+        // Core exposes extern names as terminal type symbols even though it does
+        // not yet attach a `TypeId` to them.
+        SymbolKind::ExternType => CompletionItemKind::CLASS,
     }
 }
 
@@ -479,7 +488,7 @@ fn namespace_scope_of_visible_symbol(
     name_id: InternedId,
 ) -> Option<ScopeId> {
     for sym_id in reachable_module_symbols(compiler, ModuleId::new(0)) {
-        let Some(sym) = compiler.symbols.get(sym_id) else {
+        let Some(sym) = compiler.syms.get(sym_id) else {
             continue;
         };
         if sym.name_id != name_id {
@@ -492,6 +501,28 @@ fn namespace_scope_of_visible_symbol(
     None
 }
 
+/// Resolves a compiler-provided namespace by name. Intrinsic namespaces such as
+/// `JAVA::types::java` are not reachable from the ordinary module scope tables,
+/// but they are valid inside override configuration paths.
+fn namespace_scope_of_intrinsic_symbol(
+    compiler: &ScriptCompiler,
+    name_id: InternedId,
+) -> Option<ScopeId> {
+    compiler.syms.items.iter().find_map(|sym| {
+        if sym.name_id != name_id || !matches!(sym.kind, SymbolKind::Namespace) {
+            return None;
+        }
+        let Some(scopes_concepts::AssociatedScopeKind::Scope(scope_id)) = sym.associated_scope
+        else {
+            return None;
+        };
+        compiler.scopes[scope_id]
+            .scope
+            .is_intrinsic
+            .then_some(scope_id)
+    })
+}
+
 pub(crate) struct ConfigCompletionCandidate {
     pub(crate) open: u32,
     pub(crate) close: u32,
@@ -502,18 +533,24 @@ pub(crate) struct ConfigCompletionCandidate {
     pub(crate) configured_members: Vec<InternedId>,
 }
 
-/// Returns the brace pairs in the script token stream.  Lexer tokens are used rather than raw
-/// characters so braces inside strings and comments cannot affect the nesting calculation.
-fn config_brace_pairs(state: &DocumentState) -> HashMap<u32, u32> {
+/// Map config delimiters to their closing brace. Shorthand arrows share their
+/// enclosing block's close; child braces still establish their own scope.
+/// Lexer tokens exclude delimiters inside strings and comments.
+fn config_delimiter_pairs(state: &DocumentState) -> HashMap<u32, u32> {
     let mut stack = Vec::new();
     let mut pairs = HashMap::new();
 
     for token in &state.tokens {
         match token.tok {
-            ScriptToken::OCurlyBracket => stack.push(token.span.start),
+            ScriptToken::OCurlyBracket | ScriptToken::NotSlimArrow => {
+                stack.push((token.span.start, token.tok));
+            }
             ScriptToken::CCurlyBracket => {
-                if let Some(open) = stack.pop() {
+                while let Some((open, delimiter)) = stack.pop() {
                     pairs.insert(open, token.span.start);
+                    if delimiter == ScriptToken::OCurlyBracket {
+                        break;
+                    }
                 }
             }
             _ => {}
@@ -528,23 +565,23 @@ fn config_block_bounds(
     pairs: &HashMap<u32, u32>,
     name_end: u32,
 ) -> Option<(u32, u32)> {
-    // Tokens are ordered by span, so binary-search to the first one at or after the
-    // name and scan from there.  Every nested config member calls this, and starting
-    // each search at token 0 made the walk quadratic in the token count.
+    // The delimiter immediately follows the name in the lexer stream, including
+    // when comments or whitespace intervene. Do not borrow a later child's brace.
     let from = state
         .tokens
         .partition_point(|token| token.span.start < name_end);
-    let open = state.tokens[from..]
-        .iter()
-        .find(|token| matches!(token.tok, ScriptToken::OCurlyBracket))
-        .map(|token| token.span.start)?;
+    let delimiter = state.tokens.get(from)?;
+    let open = delimiter.span.start;
+    let close = match delimiter.tok {
+        ScriptToken::OCurlyBracket | ScriptToken::NotSlimArrow => pairs.get(&open).copied(),
+        _ => return None,
+    };
 
     // An incomplete config block has no closing token yet.  Treating the document end as its
     // boundary keeps completion useful while the user is typing the block.
-    let close = pairs
-        .get(&open)
-        .copied()
-        .unwrap_or_else(|| state.text.len().saturating_sub(state.script_start) as u32);
+    let close = close.unwrap_or_else(|| {
+        (state.serial_start.unwrap_or(state.text.len()) - state.script_start) as u32
+    });
 
     Some((open, close))
 }
@@ -602,7 +639,7 @@ fn configured_option_names(
 ) -> Vec<InternedId> {
     option_ids
         .iter()
-        .filter_map(|member_id| match &compiler.impl_members[*member_id] {
+        .filter_map(|member_id| match &compiler.impl_membs[*member_id] {
             ImplMemberKind::OptAssignmentRoot(option) => Some(option.name_id),
             ImplMemberKind::OptAssignmentMember(option) => Some(option.name_id),
             //TODO: `MultiTypeAssignment` assigns types, not config options, and is
@@ -614,6 +651,23 @@ fn configured_option_names(
         .collect()
 }
 
+fn config_member_type_id(
+    member: &compilation::semantic::hir::hir_impls::ConfigMember,
+) -> Option<TypeId> {
+    match &member.meta {
+        ConfigMemberMetadataKind::Complex(meta) => meta.linked_memb_type_id,
+        ConfigMemberMetadataKind::Override(_) => None,
+    }
+}
+
+fn config_root_type_id(compiler: &ScriptCompiler, cfg_root: &ConfigRoot) -> Option<TypeId> {
+    let sym_id = cfg_root.linked_sym_id?;
+    match &compiler.syms[sym_id].kind {
+        SymbolKind::Type(type_id) => Some(*type_id),
+        _ => None,
+    }
+}
+
 fn config_candidate_for_member(
     compiler: &ScriptCompiler,
     member_id: ImplMemberId,
@@ -621,16 +675,16 @@ fn config_candidate_for_member(
     pairs: &HashMap<u32, u32>,
     candidates: &mut Vec<ConfigCompletionCandidate>,
 ) {
-    let ImplMemberKind::ConfigMember(member) = &compiler.impl_members[member_id] else {
+    let ImplMemberKind::ConfigMember(member) = &compiler.impl_membs[member_id] else {
         return;
     };
 
-    if let Some((open, close)) = config_block_bounds(state, pairs, member.name_span.end) {
+    if let Some((open, close)) = config_block_bounds(state, pairs, member.common.name_span.end) {
         let configured_members = member
             .cfg_members
             .iter()
-            .filter_map(|child_id| match &compiler.impl_members[*child_id] {
-                ImplMemberKind::ConfigMember(child) => Some(child.name_id),
+            .filter_map(|child_id| match &compiler.impl_membs[*child_id] {
+                ImplMemberKind::ConfigMember(child) => Some(child.common.name_id),
                 ImplMemberKind::OptAssignmentRoot(_)
                 | ImplMemberKind::OptAssignmentMember(_)
                 | ImplMemberKind::MultiTypeAssignment(_)
@@ -641,10 +695,10 @@ fn config_candidate_for_member(
         candidates.push(ConfigCompletionCandidate {
             open,
             close,
-            name_start: member.name_span.start,
-            type_id: member.linked_member_type_id,
+            name_start: member.common.name_span.start,
+            type_id: config_member_type_id(member),
             is_root: false,
-            configured_options: configured_option_names(compiler, &member.opt_assignments),
+            configured_options: configured_option_names(compiler, &member.ast_stmts),
             configured_members,
         });
     }
@@ -661,7 +715,7 @@ fn config_candidate_for_member(
 /// which a parse error can leave behind.
 fn cfg_kind_name_span(kind: &AbstractConfigKind) -> Option<SourceSpan> {
     match kind {
-        AbstractConfigKind::Root(path) => {
+        AbstractConfigKind::Root(path, _) => {
             let first = path.first()?;
             let last = path.last()?;
             Some(SourceSpan::new(
@@ -674,12 +728,71 @@ fn cfg_kind_name_span(kind: &AbstractConfigKind) -> Option<SourceSpan> {
     }
 }
 
+fn cursor_in_override_config(
+    state: &DocumentState,
+    compiler: &ScriptCompiler,
+    byte_off: usize,
+) -> bool {
+    let Some(ast) = state.asts.first().and_then(Option::as_ref) else {
+        return false;
+    };
+    let Some(main_units) = state.compilation_syms.first().and_then(Option::as_ref) else {
+        return false;
+    };
+    let pairs = config_delimiter_pairs(state);
+    let relative_cursor = byte_off.saturating_sub(state.script_start) as u32;
+
+    fn contains_override(
+        cfg: &compilation::parser::ast::ast_concepts::AbstractConfig,
+        state: &DocumentState,
+        pairs: &HashMap<u32, u32>,
+        relative_cursor: u32,
+    ) -> bool {
+        let Some(name_span) = cfg_kind_name_span(&cfg.kind) else {
+            return false;
+        };
+        let Some((open, close)) = config_block_bounds(state, pairs, name_span.end) else {
+            return false;
+        };
+        if !(open <= relative_cursor && relative_cursor < close) {
+            return false;
+        }
+
+        let is_override = matches!(
+            &cfg.kind,
+            AbstractConfigKind::Root(_, ConfigRootMetadataKind::Override)
+                | AbstractConfigKind::Member(
+                    _,
+                    compilation::parser::ast::ast_concepts::AstConfigMemberMetadataKind::Override(
+                        _,
+                    ),
+                )
+        );
+        is_override
+            || cfg
+                .cfg_members
+                .iter()
+                .any(|child| contains_override(child, state, pairs, relative_cursor))
+    }
+
+    main_units.iter().any(|unit| {
+        let compilation::semantic::compilation_unit::CompilationUnit::Impl(impl_id) = unit else {
+            return false;
+        };
+        let ImplHirKind::Config(_) = compiler.impls[*impl_id].kind;
+        let Some(ast_id) = compiler.impls[*impl_id].ast_id else {
+            return false;
+        };
+        contains_override(ast.get_cfg_root(ast_id), state, &pairs, relative_cursor)
+    })
+}
+
 fn config_completion_candidate(
     state: &DocumentState,
     compiler: &ScriptCompiler,
     byte_off: usize,
 ) -> Option<ConfigCompletionCandidate> {
-    let pairs = config_brace_pairs(state);
+    let pairs = config_delimiter_pairs(state);
     let relative_cursor = byte_off.saturating_sub(state.script_start) as u32;
     let ast = state.asts.first()?.as_ref()?;
     let main_units = state.compilation_syms.first()?.as_ref()?;
@@ -695,14 +808,19 @@ fn config_completion_candidate(
         }
 
         let ImplHirKind::Config(cfg_root_id) = &impl_hir.kind;
-        // The `ScopeType::Complex` filter above rules out `override->` roots, which
-        // are the only other kind.
-        let ConfigRootKind::Complex(cfg_root) = &compiler.cfgs[*cfg_root_id] else {
-            continue;
-        };
+        let cfg_root = &compiler.cfgs[*cfg_root_id];
         let Some(ast_id) = impl_hir.ast_id else {
             continue;
         };
+        // Only `complex` roots offer struct/enum member completion. `override`
+        // roots configure intrinsic namespaces, which share the `Complex`
+        // scope but carry `Override` metadata in the AST.
+        let AbstractConfigKind::Root(_, root_meta) = &ast.get_cfg_root(ast_id).kind else {
+            continue;
+        };
+        if !matches!(root_meta, ConfigRootMetadataKind::Complex) {
+            continue;
+        }
         let Some(root_name_span) = cfg_kind_name_span(&ast.get_cfg_root(ast_id).kind) else {
             continue;
         };
@@ -714,15 +832,15 @@ fn config_completion_candidate(
             open,
             close,
             name_start: root_name_span.start,
-            type_id: cfg_root.linked_type_id,
+            type_id: config_root_type_id(compiler, cfg_root),
             is_root: true,
-            configured_options: configured_option_names(compiler, &cfg_root.impl_stmts),
+            configured_options: configured_option_names(compiler, &cfg_root.stmts),
             configured_members: cfg_root
                 .common
-                .cfg_members
+                .cfg_membs
                 .iter()
-                .filter_map(|member_id| match &compiler.impl_members[*member_id] {
-                    ImplMemberKind::ConfigMember(member) => Some(member.name_id),
+                .filter_map(|member_id| match &compiler.impl_membs[*member_id] {
+                    ImplMemberKind::ConfigMember(member) => Some(member.common.name_id),
                     ImplMemberKind::OptAssignmentRoot(_)
                     | ImplMemberKind::OptAssignmentMember(_)
                     | ImplMemberKind::MultiTypeAssignment(_)
@@ -731,7 +849,7 @@ fn config_completion_candidate(
                 .collect(),
         });
 
-        for &member_id in &cfg_root.common.cfg_members {
+        for &member_id in &cfg_root.common.cfg_membs {
             config_candidate_for_member(compiler, member_id, state, &pairs, &mut candidates);
         }
     }
@@ -863,7 +981,7 @@ fn classify_id_token(
             SemanticEntity::Symbol(sym_id) => {
                 // `entity: &SemanticEntity` so `sym_id: &SymbolId` — dereference
                 // before passing to `Arena::get`, which takes the id by value.
-                if let Some(sym) = compiler.symbols.get(*sym_id) {
+                if let Some(sym) = compiler.syms.get(*sym_id) {
                     match sym.kind {
                         SymbolKind::Type(tid) => {
                             let ty = &compiler.types[tid].ty;
@@ -894,11 +1012,14 @@ fn classify_id_token(
                             }
                             return Some(SemanticTokenType::Variable.as_u32());
                         }
-                        SymbolKind::Namespace => {
-                            return Some(SemanticTokenType::Variable.as_u32());
-                        }
-                        //TODO: `ExternType` is unfinished in core; it has no token type
-                        //of its own yet, so it is highlighted as a plain type.
+                        SymbolKind::Namespace => match sym.associated_scope {
+                            Some(scopes_concepts::AssociatedScopeKind::Scope(scope_id))
+                                if compiler.scopes[scope_id].scope.is_intrinsic =>
+                            {
+                                return Some(SemanticTokenType::Class.as_u32());
+                            }
+                            _ => return Some(SemanticTokenType::Variable.as_u32()),
+                        },
                         SymbolKind::Directive(_) => {
                             return Some(SemanticTokenType::Regexp.as_u32());
                         }
@@ -952,6 +1073,7 @@ impl LanguageServer for Backend {
                     "#".to_string(),
                     ".".to_string(),
                     ":".to_string(),
+                    ">".to_string(),
                 ]),
                 ..Default::default()
             }),
@@ -1458,8 +1580,27 @@ impl LanguageServer for Backend {
 
         let byte_off =
             crate::text::position_to_offset(&state.text, params.text_document_position.position);
-        let (start_b, _end_b) = crate::text::find_word_bounds(&state.text, byte_off);
+        let (mut start_b, _end_b) = crate::text::find_word_bounds(&state.text, byte_off);
+        // Word bounds include `>` for section names such as `nest->`. A config
+        // arrow is a delimiter, including when a prefix directly follows it.
+        if start_b > 0
+            && start_b < byte_off
+            && state.text.as_bytes().get(start_b - 1..start_b + 1) == Some(b"=>")
+        {
+            start_b += 1;
+        }
         let prefix = &state.text[start_b..byte_off.min(state.text.len())];
+
+        // `>` triggers automatically only as the second character of `=>`.
+        if params
+            .context
+            .as_ref()
+            .and_then(|context| context.trigger_character.as_deref())
+            == Some(">")
+            && !state.text[..byte_off].ends_with("=>")
+        {
+            return Ok(Some(CompletionResponse::Array(Vec::new())));
+        }
 
         // Determine the script section boundaries from cached state
         let script_start = state.script_start;
@@ -1510,14 +1651,15 @@ impl LanguageServer for Backend {
             if let Some(target_id) = state.interner.try_search_str(target_name)
                 && let Some(compiler) = &state.compiler
             {
-                if let Some(module) = compiler.mods.iter().find(|m| m.name_id == target_id) {
+                if let Some(mod_id) = crate::state::visible_module(compiler, target_id) {
+                    let module = &compiler.mods[mod_id];
                     if module.mod_id.id == 0 {
                         // Current module: everything reachable through the module's own scope
                         // tables plus the injected core scope. This mirrors real scope lookup,
                         // so compiler-internal namespace members such as `i8::MAX` (which live
                         // in builtin-type namespace scopes) are never offered here.
                         for sym_id in reachable_module_symbols(compiler, module.mod_id) {
-                            let Some(sym) = compiler.symbols.get(sym_id) else {
+                            let Some(sym) = compiler.syms.get(sym_id) else {
                                 continue;
                             };
                             if sym.scope_origin == scopes_concepts::ScopeType::Var
@@ -1540,7 +1682,7 @@ impl LanguageServer for Backend {
                         for sym_id in &module.exports {
                             // `sym_id: &SymbolId` (from iterating over `Vec<SymbolId>`),
                             // dereference before calling `Arena::get`.
-                            if let Some(sym) = compiler.symbols.get(*sym_id) {
+                            if let Some(sym) = compiler.syms.get(*sym_id) {
                                 let sym_name = state.interner.search(sym.name_id);
                                 if prefix.is_empty() || sym_name.starts_with(prefix) {
                                     let kind = symbol_completion_kind(compiler, sym);
@@ -1554,14 +1696,18 @@ impl LanguageServer for Backend {
                         }
                     }
                 } else if let Some(scope_id) =
-                    namespace_scope_of_visible_symbol(compiler, target_id)
+                    namespace_scope_of_visible_symbol(compiler, target_id).or_else(|| {
+                        cursor_in_override_config(state, compiler, byte_off)
+                            .then(|| namespace_scope_of_intrinsic_symbol(compiler, target_id))
+                            .flatten()
+                    })
                 {
-                    // Not a module: a namespace-bearing symbol such as a built-in type.
-                    // `i32::` resolves through visible scope lookup to `i32`'s namespace
-                    // scope, whose members (`MAX`, `MIN`, …) are then offered.
+                    // Not a module: a namespace-bearing symbol such as a built-in type
+                    // or an intrinsic override namespace. Its members live in the
+                    // associated scope rather than in a module export list.
                     let ns_scope = &compiler.scopes[scope_id];
                     for (_, member_id) in ns_scope.scope.table.iter_interned() {
-                        let Some(member) = compiler.symbols.get(member_id) else {
+                        let Some(member) = compiler.syms.get(member_id) else {
                             continue;
                         };
                         let member_name = state.interner.search(member.name_id);
@@ -1603,10 +1749,11 @@ impl LanguageServer for Backend {
             ("var->", CompletionItemKind::KEYWORD),
             ("nest->", CompletionItemKind::KEYWORD),
             ("complex->", CompletionItemKind::KEYWORD),
-            ("override->", CompletionItemKind::KEYWORD),
+            ("override", CompletionItemKind::KEYWORD),
             ("struct", CompletionItemKind::KEYWORD),
             ("enum", CompletionItemKind::KEYWORD),
             ("change", CompletionItemKind::KEYWORD),
+            ("for", CompletionItemKind::KEYWORD),
             ("List", CompletionItemKind::STRUCT),
             ("Set", CompletionItemKind::STRUCT),
             ("Map", CompletionItemKind::STRUCT),
@@ -1641,7 +1788,7 @@ impl LanguageServer for Backend {
             {
                 for sym_id in &core_mod.exports {
                     // `sym_id: &SymbolId` — dereference for the typed `Arena::get` call.
-                    if let Some(sym) = compiler.symbols.get(*sym_id) {
+                    if let Some(sym) = compiler.syms.get(*sym_id) {
                         push_item(
                             state.interner.search(sym.name_id).to_string(),
                             symbol_completion_kind(compiler, sym),
@@ -1653,7 +1800,7 @@ impl LanguageServer for Backend {
             // Compiler-origin directives (`#warn`, `#ignore`, `#scient`, …), read from
             // the symbol registry rather than hard-coded.
             // `Arena` is not an iterator; iterate over the inner `items` vec.
-            for sym in &compiler.symbols.items {
+            for sym in &compiler.syms.items {
                 if matches!(sym.kind, SymbolKind::Directive(_)) {
                     let name = state.interner.search(sym.name_id);
                     push_item(format!("#{}", name), symbol_completion_kind(compiler, sym));

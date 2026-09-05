@@ -64,7 +64,8 @@ use crate::semantic::hir::hir_exprs::{
 use crate::semantic::hir::hir_impls::{
     ConfigMember, ConfigMemberCommon, ConfigMemberComplexMetadata, ConfigMemberMetadataKind,
     ConfigMemberOverrideMetadata, ConfigRootMetadataKind, ImplHirKind, ImplMemberKind,
-    MultiTypeAssignment, OptionAssignmentMember, OptionAssignmentRoot,
+    LinkedConfigOverrideMemberKind, MultiTypeAssignment, OptionAssignmentMember,
+    OptionAssignmentRoot,
 };
 use crate::semantic::hir::hir_symbols::{
     Symbol, SymbolKind, SymbolKindFlat, SymbolOrigin, VarDef, VariableMetadata, VariableState,
@@ -503,9 +504,6 @@ impl<'res> TypeResolver<'res> {
         summary
     }
 
-    //TODO: When override is done add it's routing to this. Please.
-    //
-    //
     // The lifetime used here is needed so that the vectors that are pushed into during the recursive
     // maintaining of seen identifiers know that their shortest lifetime is more than long enough to
     // where the borrow cheker is satisfied.
@@ -708,7 +706,7 @@ impl<'res> TypeResolver<'res> {
                     let core_msg = if !matches!(root_meta, ConfigRootMetadataKind::Override) {
                         "Cannot use `change` outside of `override`"
                     } else {
-                        "No context expects `change` at root"
+                        "No override context expects `change` at root"
                     };
 
                     let start = abs_multi.to_assign[0].span.start;
@@ -1090,9 +1088,13 @@ impl<'res> TypeResolver<'res> {
                             }
                         }
                     };
-                    let memb_ctx = ConfigMemberOverrideContext::new(override_sym_id);
+                    //TODO: Member id or sym id?
 
-                    //TODO: Return me
+                    // This particular override context wants to alter the root symbol id so it is
+                    // given `Some`
+                    let linked = LinkedConfigOverrideMemberKind::Root(found_sym_id);
+                    let memb_ctx = ConfigMemberOverrideContext::new(override_sym_id, linked);
+
                     self.resolve_cfg_member(
                         parent_impl_id,
                         // The type expr is derivative of path segments which may or may not be a valid type
@@ -1170,8 +1172,8 @@ impl<'res> TypeResolver<'res> {
         let cfg_root = self.compiler.get_cfg_root_mut(parent_impl_id);
 
         debug_assert!(matches!(cfg_root.linked_sym_id, None));
-        debug_assert_eq!(cfg_root.memb_stmts.len(), 0);
-        debug_assert_eq!(cfg_root.common.cfg_members.len(), 0);
+        debug_assert_eq!(cfg_root.stmts.len(), 0);
+        debug_assert_eq!(cfg_root.common.cfg_membs.len(), 0);
         debug_assert!(matches!(
             cfg_root.common.lookup_pat,
             ScopeLookupPattern::NamespaceOnly
@@ -1180,8 +1182,8 @@ impl<'res> TypeResolver<'res> {
         ));
 
         cfg_root.linked_sym_id = Some(found_sym_id);
-        cfg_root.memb_stmts = memb_stmts;
-        cfg_root.common.cfg_members = cfg_members;
+        cfg_root.stmts = memb_stmts;
+        cfg_root.common.cfg_membs = cfg_members;
     }
 
     // Caveats:
@@ -1397,6 +1399,7 @@ impl<'res> TypeResolver<'res> {
                     };
 
                     let impl_memb_id = ImplMemberId::new(self.compiler.impl_membs.len() as u32);
+                    todo!("parent_memb_id needs to be an impl member id to it's parent");
                     let opt = OptionAssignmentMember::new(
                         parent_memb_id,
                         impl_memb_id,
@@ -1421,7 +1424,7 @@ impl<'res> TypeResolver<'res> {
                             associated_scope,
                             sp_ty_expr,
                             scope_type,
-                            ScopeLookupPattern::NamespaceOnly,
+                            ScopeLookupPattern::NoRestrictions,
                             self.interner,
                             env,
                         ) {
@@ -1576,7 +1579,7 @@ impl<'res> TypeResolver<'res> {
                 // or not, but override has no use-case if the parent doesn't have a type because it
                 // can't apply to anything, so the control flow is staying the same. If this were
                 // ever made false, would probably just check each time iff `complex`. Not much of a difference.
-                let parent_type_id_opt = self.compiler.get_type_id_from_member_id(ctx.memb_id);
+                let parent_type_id_opt = self.compiler.get_type_id_from_memb_id(ctx.memb_id);
                 for abs_cfg_memb in &parent_abs_cfg.cfg_members {
                     let AbstractConfigKind::Member(sp_memb_name_id, memb_ast_meta_kind) =
                         abs_cfg_memb.kind.clone()
@@ -1833,7 +1836,7 @@ impl<'res> TypeResolver<'res> {
                                     continue;
                                 }
                                 // Is valid because a config member, that can't hold members, not
-                                // having members, means that no impossible actions was taken.
+                                // having members, means that no impossible action was taken.
                                 ConfigMemberComplexContext::new(ctx.memb_id)
                             };
 
@@ -1863,7 +1866,10 @@ impl<'res> TypeResolver<'res> {
                                         continue;
                                     }
                                 };
-                            let memb_ctx = ConfigMemberOverrideContext::new(override_sym_id);
+
+                            let linked = LinkedConfigOverrideMemberKind::Member(ctx.memb_id);
+                            let memb_ctx =
+                                ConfigMemberOverrideContext::new(override_sym_id, linked);
                             ConfigMemberContextKind::Override(memb_ctx)
                         }
                     };
@@ -1892,8 +1898,18 @@ impl<'res> TypeResolver<'res> {
                     ConfigMemberComplexMetadata::new(ctx.memb_id, parent_type_id_opt);
                 ConfigMemberMetadataKind::Complex(complex_meta)
             }
-            //TODO: Recycle
+            //NOTE: We don't really do anything with override namespaces themselves. We just want
+            //the extern types they store.
+            //
+            //This is also the only location where override actually has it's config members
+            //iterated through, other than the root.
             ConfigMemberContextKind::Override(ctx) => {
+                let parent_override_sym = &self.compiler.syms[ctx.override_sym_id];
+                let Some(ns) = parent_override_sym.associated_scope else {
+                    // It can't fail
+                    todo!("You could fail, but you can't actually fail now")
+                };
+
                 for abs_cfg_memb in &parent_abs_cfg.cfg_members {
                     let AbstractConfigKind::Member(sp_memb_name_id, memb_ast_meta_kind) =
                         abs_cfg_memb.kind.clone()
@@ -1901,12 +1917,54 @@ impl<'res> TypeResolver<'res> {
                         unreachable!()
                     };
 
+                    let override_sym_id = match scopes_helpers::find_sym_id_ret_preset(
+                        self.compiler,
+                        ns,
+                        sp_memb_name_id,
+                        scope_type,
+                        ScopeLookupPattern::NamespaceOnly,
+                        ScopeLookupPreferenceFlags::new_namespace(),
+                    ) {
+                        Ok(out) => out.found_sym_id,
+                        Err(preset_err) => {
+                            preset_reporter::report_preset(
+                                self.compiler,
+                                &mut self.summary,
+                                preset_err,
+                                env.region,
+                                self.cfg,
+                                self.interner,
+                            );
+                            continue;
+                        }
+                    };
+
+                    // No new information except the current override environment is needed.
+                    let memb_ctx =
+                        ConfigMemberOverrideContext::new(override_sym_id, ctx.linked_kind);
+
+                    let cfg_memb_id = self.resolve_cfg_member(
+                        root_parent_impl_id,
+                        root_span,
+                        cfg_root_ctx,
+                        &ConfigMemberContextKind::Override(memb_ctx),
+                        seen_cfg_idents,
+                        seen_opt_idents,
+                        abs_cfg_memb,
+                        scope_type,
+                        depth + 1,
+                        env,
+                    );
+                    impl_membs.push(cfg_memb_id);
+
                     debug_assert!(
                         matches!(memb_ast_meta_kind, AstConfigMemberMetadataKind::Override(_)),
                         "Override must set all future cfg membs to override"
                     );
                 }
-                let override_meta = ConfigMemberOverrideMetadata::new(ctx.sym_id);
+
+                //WARN: Not sure about if this is the right value to give yet
+                let override_meta = ConfigMemberOverrideMetadata::new(ctx.linked_kind);
                 ConfigMemberMetadataKind::Override(override_meta)
             }
         };

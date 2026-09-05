@@ -4,7 +4,7 @@
 use chrn_utils::{
     chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     err_codes::ErrorCode,
-    id_types::{ExprId, ImplId, InternedId, MemberId, SymbolId, TypeId},
+    id_types::{ExprId, ImplId, InternedId, SymbolId, TypeId},
     intern::Intern,
     source_map::{
         source_diagnostic::{
@@ -17,7 +17,7 @@ use chrn_utils::{
 };
 use lang::{
     chrn_classifier::ChrnClassifier,
-    config_schemas::ConfigSchema,
+    config_schemas::{self, ConfigSchema, ConfigSchemaKind},
     directives::Directive,
     types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
     values::Value,
@@ -30,7 +30,11 @@ use crate::{
     script_compiler::ScriptCompiler,
     semantic::{
         compilation_unit::CompilationUnit,
-        hir::{hir_concepts::Type, hir_impls::ImplHirKind, hir_symbols::SymbolKind},
+        hir::{
+            hir_concepts::Type,
+            hir_impls::{ConfigMember, ConfigMemberMetadataKind, ConfigRootKind, ImplHirKind},
+            hir_symbols::{MemberSymbolKind, SymbolKind},
+        },
         preset_reporter::{self, preset_err::PresetErr},
     },
 };
@@ -129,6 +133,9 @@ impl<'a> ConstraintResolver<'a> {
         // }
     }
 
+    //TODO: We need to track the current_sym_id for override so that it knows to target a member or
+    //root
+    //
     // The code below is far far worse than all prior because the concept of what a config is and
     // enforces is not 100% done, but the end-behavior exists so the specifics will be sorted later.
     fn resolve_cfg_root(&mut self, parent_impl_id: ImplId, env: &ResolverEnv) {
@@ -138,142 +145,164 @@ impl<'a> ConstraintResolver<'a> {
         // let abs_cfg_root = env.ast_info.get_cfg_root(ast_id);
 
         // leconstraint_reot module = &self.compiler.mods[env.current_mod];
-        let cfg_root = self.compiler.get_cfg_root_mut(todo!());
+        let cfg_root = self.compiler.get_cfg_root(parent_impl_id);
 
-        let Some(linked_type_id) = cfg_root.linked_sym_id else {
+        let Some(linked_sym_id) = cfg_root.linked_sym_id else {
             return;
         };
-        let cfg_root_ty_span = self
-            .compiler
-            .get_span_from_type_id(todo!())
-            .expect("NOT DONE YET");
 
-        // We may need an invalid and valid marker for cached checks regarding if it was a type id
-        // or not.
-        // let cfg_sym = &self.compiler.symbols[linked_sym_id];
+        match cfg_root.kind {
+            ConfigRootKind::Override => {
+                for multi_assign_id in cfg_root.stmts.iter().copied() {
+                    todo!()
+                }
 
-        // If the bar is ever moved to where the linking is possible even with an invalid config
-        // this will be false.
-        //
-        // This should probably never change because the odds of linking a symbol id to such a
-        // broken config being useful error message wise seems unlikely
-        // WARN: REMOVED
-        // let linked_type_id = self
-        //     .compiler
-        //     .get_type_id_from_sym_id(linked_type_id)
-        //     .expect("`TypeResolver` should only give linked sym ids to valid configs");
+                for cfg_memb_id in cfg_root.common.cfg_membs.iter().copied() {
+                    if self.compiler.impl_membs[cfg_memb_id].is_unknown() {
+                        continue;
+                    }
 
-        for opt_root_id in cfg_root.memb_stmts.iter().copied() {
-            let opt_root = self.compiler.get_opt_assignment_root(opt_root_id);
-            let schema = schema_lookup::get_schema_from_type_id(&self.compiler.types, todo!())
-                .expect("`TypeResolver` should only give linked sym ids to valid configs");
+                    let cfg_memb = self.compiler.get_cfg_member(cfg_memb_id);
+                    self.check_cfg_memb(cfg_memb);
+                    todo!("I dont")
+                }
+            }
+            ConfigRootKind::Complex => {
+                // Should probably store it in the kind itself, or at least `Option<Kind>`
+                let linked_type_id = self
+                    .compiler
+                    .get_type_id_from_sym_id(linked_sym_id)
+                    .expect("Should have been processed by type resolver");
+                let cfg_root_ty_span = self
+                    .compiler
+                    .get_span_from_type_id(linked_type_id)
+                    .expect("Should be user defined");
+                // We may need an invalid and valid marker for cached checks regarding if it was a type id
+                // or not.
+                // let cfg_sym = &self.compiler.symbols[linked_sym_id];
 
-            let sp_opt_name_id = SpannedContainer::new(opt_root.name_id, opt_root.name_span);
-            let boundaries = Type::boundaries(self.compiler, todo!());
-            let type_name_id = self.compiler.get_name_id_from_type_id(todo!());
+                // If the bar is ever moved to where the linking is possible even with an invalid config
+                // this will be false.
+                //
+                // This should probably never change because the odds of linking a symbol id to such a
+                // broken config being useful error message wise seems unlikely
 
-            // let ty_name_id = self.compiler.get_span_from_type_id(linked_type_id).unwrap();
-            if let Err(preset_err) = self.check_opt(
-                schema,
-                type_name_id,
-                cfg_root_ty_span,
-                boundaries,
-                &sp_opt_name_id,
-                opt_root.array_expr_id,
-                env,
-            ) {
-                // Maybe return ONE more present? Just 2? A small slice?
-                // A SLICE?
-                // Yeah sure
-                preset_reporter::report_preset(
-                    &self.compiler,
-                    &mut self.summary,
-                    preset_err,
-                    env.region,
-                    self.cfg,
-                    self.interner,
-                );
-            };
+                for opt_root_id in cfg_root.stmts.iter().copied() {
+                    let opt_root = self.compiler.get_opt_assignment_root(opt_root_id);
+                    let schema = schema_lookup::get_schema_from_type_id(
+                        &self.compiler.types,
+                        linked_type_id,
+                    )
+                    .expect("`TypeResolver` should only give linked sym ids to valid configs");
+
+                    let sp_opt_name_id =
+                        SpannedContainer::new(opt_root.name_id, opt_root.name_span);
+                    let boundaries = Type::boundaries(self.compiler, linked_type_id);
+                    let ty_name_id = self.compiler.get_name_id_from_type_id(linked_type_id);
+
+                    if let Err(preset_err) = self.check_opt(
+                        schema,
+                        ty_name_id,
+                        cfg_root_ty_span,
+                        boundaries,
+                        &sp_opt_name_id,
+                        opt_root.array_expr_id,
+                        env,
+                    ) {
+                        // Maybe return ONE more present? Just 2? A small slice?
+                        // A SLICE?
+                        // Yeah sure
+                        preset_reporter::report_preset(
+                            &self.compiler,
+                            &mut self.summary,
+                            preset_err,
+                            env.region,
+                            self.cfg,
+                            self.interner,
+                        );
+                    };
+                }
+
+                for cfg_memb_id in cfg_root.common.cfg_membs.iter().copied() {
+                    //WARN: Suspicious
+                    if self.compiler.impl_membs[cfg_memb_id].is_unknown() {
+                        continue;
+                    }
+
+                    let cfg_memb = self.compiler.get_cfg_member(cfg_memb_id);
+
+                    match &cfg_memb.meta {
+                        ConfigMemberMetadataKind::Complex(meta) => {
+                            let boundaries =
+                                MemberSymbolKind::boundaries(self.compiler, meta.linked_memb_id);
+
+                            //TODO: Given the scope type, should react differently to depths of members.
+                            //Or, maybe `TypeResolver` can just do this? This actually isn't that hard to check.
+                            for opt_memb_id in cfg_memb.ast_stmts.iter().copied() {
+                                // Variant and field specific schemas?
+                                let opt_memb = self.compiler.get_opt_assignment_member(opt_memb_id);
+                                let schema =
+                                    config_schemas::get_cfg_schema(ConfigSchemaKind::Member);
+                                // let schema = schema_lookup::get_schema_from_type_id(self.compiler, linked_type_id)
+                                //     .expect("`TypeResolver` should only give linked sym ids to valid configs");
+                                let sp_opt_name_id =
+                                    SpannedContainer::new(opt_memb.name_id, opt_memb.name_span);
+                                //FIX:
+                                let member_ty_name_id_opt = self
+                                    .compiler
+                                    .get_type_id_from_memb_id(meta.linked_memb_id)
+                                    .map(|id| self.compiler.get_name_id_from_type_id(id))
+                                    .flatten();
+
+                                if let Err(preset_err) = self.check_opt(
+                                    schema,
+                                    member_ty_name_id_opt,
+                                    // WARN: Is this the right span?
+                                    cfg_memb.common.name_span,
+                                    boundaries,
+                                    &sp_opt_name_id,
+                                    opt_memb.array_expr_id,
+                                    env,
+                                ) {
+                                    // Maybe return ONE more present? Just 2? A small slice?
+                                    // No
+                                    // Slice as in [Option<PresetErr>;2]
+                                    // Ok sure
+                                    preset_reporter::report_preset(
+                                        &self.compiler,
+                                        &mut self.summary,
+                                        preset_err,
+                                        env.region,
+                                        self.cfg,
+                                        self.interner,
+                                    );
+                                };
+                            }
+
+                            // AAAAAAAAAAAAAHHHHHHHHHHHHHHHHHH
+                            // Woah (em-dash) Relax
+                            //
+                            // Recursively resolves inner members
+                            // self.resolve_cfg_member(cfg_member_id, env);
+
+                            // for thing in cfg_member.cfg_members.iter().cloned() {
+                            //     let mem = self.compiler.get_cfg_member(thing);
+                            //     dbg!(self.interner.search(mem.name_id));
+                            //     dbg!(mem);
+                            //     dbg!(thing);
+                            //     todo!("Ok");
+                            // }
+                        }
+                        ConfigMemberMetadataKind::Override(meta) => {
+                            todo!()
+                        }
+                    }
+                }
+            }
         }
-
-        // :( Clone
-        todo!();
-        // for cfg_member_id in cfg_root.cfg_members.clone() {
-        //     //WARN: Suspicious
-        //     if self.compiler.impl_members[cfg_member_id].is_unknown() {
-        //         continue;
-        //     }
-        //
-        //     let cfg_member = self.compiler.get_cfg_member(cfg_member_id);
-        //     //NOTE: The somewhat dangerous part of this staying `Option` is that it IS a real
-        //     //reflection of the fact that for something like a variant, there COULD be no boundary
-        //     //set, but it could also hide silent bugs, just like in the recursive resolution of
-        //     //option members.
-        //     let boundaries =
-        //         MemberSymbolKind::boundaries(self.compiler, cfg_member.linked_member_id);
-        //
-        //     //TODO: Given the scope type, should react differently to depths of members.
-        //     //Or, maybe `TypeResolver` can just do this? This actually isn't that hard to check.
-        //     for opt_member_id in cfg_member.opt_assignments.iter().copied() {
-        //         // Variant and field specific schemas?
-        //         let opt_member = self.compiler.get_opt_assignment_member(opt_member_id);
-        //         let schema = config_schemas::get_cfg_schema(ConfigSchemaKind::Member);
-        //         // let schema = schema_lookup::get_schema_from_type_id(self.compiler, linked_type_id)
-        //         //     .expect("`TypeResolver` should only give linked sym ids to valid configs");
-        //         let sp_opt_name_id =
-        //             SpannedContainer::new(opt_member.name_id, opt_member.name_span);
-        //         //FIX:
-        //         let member_ty_name_id_opt = self
-        //             .compiler
-        //             .get_type_id_from_member_id(cfg_member.linked_member_id)
-        //             .map(|id| self.compiler.get_name_id_from_type_id(id))
-        //             .flatten();
-        //
-        //         if let Err(preset_err) = self.check_opt(
-        //             schema,
-        //             member_ty_name_id_opt,
-        //             // WARN: Is this the right span?
-        //             cfg_member.name_span,
-        //             boundaries,
-        //             &sp_opt_name_id,
-        //             opt_member.array_expr_id,
-        //             env,
-        //         ) {
-        //             // Maybe return ONE more present? Just 2? A small slice?
-        //             // No
-        //             // Slice as in [Option<PresetErr>;2]
-        //             // Ok sure
-        //             preset_reporter::report_preset(
-        //                 &self.compiler,
-        //                 &mut self.summary,
-        //                 preset_err,
-        //                 env.region,
-        //                 self.cfg,
-        //                 self.interner,
-        //             );
-        //         };
-        //     }
-        //
-        //     // AAAAAAAAAAAAAHHHHHHHHHHHHHHHHHH
-        //     // Woah (em-dash) Relax
-        //     //
-        //     // Recursively resolves inner members
-        //     // self.resolve_cfg_member(cfg_member_id, env);
-        //
-        //     // for thing in cfg_member.cfg_members.iter().cloned() {
-        //     //     let mem = self.compiler.get_cfg_member(thing);
-        //     //     dbg!(self.interner.search(mem.name_id));
-        //     //     dbg!(mem);
-        //     //     dbg!(thing);
-        //     //     todo!("Ok");
-        //     // }
-        // }
-        // todo!("Recursively check inner cfg members");
     }
 
-    fn resolve_cfg_member(&mut self, parent_member_id: MemberId, env: &ResolverEnv) {
-        todo!()
-    }
+    fn check_cfg_memb(&self, cfg_memb: &ConfigMember) {}
 
     // Coupled so it's not member option or root option specific
     //
@@ -316,7 +345,6 @@ impl<'a> ConstraintResolver<'a> {
         // 4. unwrap()
         match schema_lookup::validate_opt(schema, user_boundaries_opt, sp_opt_name_id.inner, values)
         {
-            // DO NOT. USE. THE UNREACHABLE. DO NOT DO IT.
             SchemaResult::Valid => Ok(()),
             res => {
                 let opt_name = self.interner.search(sp_opt_name_id.inner);
@@ -398,7 +426,6 @@ impl<'a> ConstraintResolver<'a> {
 
                         let err_expr_id = array_expr.inputs[err_idx];
                         let err_span = self.compiler.exprs[err_expr_id].meta.expect_user();
-                        let lowest_bound = user_boundaries.to_fmt_lowest();
 
                         let next_ann_msg = if let Some(inner) = err_boundaries_opt {
                             let lowest_bound = inner.to_fmt_lowest();
@@ -428,11 +455,6 @@ impl<'a> ConstraintResolver<'a> {
                             )
                         };
                         builder
-
-                        // This is a little odd since it directly points out a boundary, but the
-                        // type name of the config points out a concrete type.
-                        //
-                        // builder = builder.add_annotation(err_span, AnnotationKind::Primary, None);
                     }
                     SchemaResult::CannotSupportBoundaries => {
                         let opt_name = self.interner.search(sp_opt_name_id.inner);

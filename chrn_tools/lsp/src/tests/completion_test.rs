@@ -138,3 +138,145 @@ async fn current_module_completion_hides_builtin_namespace_members() {
         "MIN is not reachable from a module, got {min_count} items"
     );
 }
+
+/// Override paths use compiler-provided namespace scopes rather than module
+/// exports. Completing a partially typed `java::int` must still expose the
+/// terminal extern type.
+#[tokio::test(start_paused = true)]
+async fn static_access_on_an_intrinsic_namespace_offers_extern_types() {
+    let workspace = TempWorkspace::new("intrinsic_static_completion");
+    let text = "complex->\n    override JAVA {\n        types {\n            change i8 = java::i\n        }\n    }\n";
+    let uri = workspace.write("main.chrn", text);
+
+    let mut session = Session::new().await;
+    session.open(&uri, text).await;
+
+    let mut pos = position_of(text, "java::i", 0);
+    pos.character += "java::i".len() as u32;
+
+    let response = session
+        .completion(&uri, pos, None)
+        .await
+        .expect("the override path completes");
+    let CompletionResponse::Array(items) = response else {
+        panic!("the server answers completion with a plain item array");
+    };
+
+    let labels: Vec<&str> = items.iter().map(|item| item.label.as_str()).collect();
+    let int = items
+        .iter()
+        .find(|item| item.label == "int")
+        .unwrap_or_else(|| panic!("`java::i` completes the extern type `int`, got {labels:?}"));
+    assert_eq!(
+        int.kind,
+        Some(tower_lsp::lsp_types::CompletionItemKind::CLASS)
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn arrow_config_completion_matches_braces_for_struct_members() {
+    use tower_lsp::lsp_types::CompletionItemKind;
+
+    let workspace = TempWorkspace::new("arrow_config_completion");
+    let mut session = Session::new().await;
+    let declarations = "nest->\nstruct Inner { available: i32 }\nstruct Outer { inner: Inner, unrelated: i32 }\ncomplex->\n";
+
+    for (name, config, trigger) in [
+        ("braces", "for Outer { inner {~\n} }\n", None),
+        ("arrow", "for Outer { inner =>~\n} \n", Some(">")),
+        (
+            "arrow_whitespace",
+            "for Outer { inner =>\n    ~\n} \n",
+            None,
+        ),
+    ] {
+        let marked = format!("{declarations}{config}");
+        let position = position_of(&marked, "~", 0);
+        let text = marked.replace('~', "");
+        let uri = workspace.write(&format!("{name}.chrn"), &text);
+        let diagnostics = session.open(&uri, &text).await;
+        assert!(diagnostics.is_empty(), "{name}: {diagnostics:?}");
+        assert_eq!(
+            session
+                .backend()
+                .docs
+                .read()
+                .get(uri.as_str())
+                .unwrap()
+                .as_str(),
+            text
+        );
+
+        let response = session.completion(&uri, position, trigger).await.unwrap();
+        let CompletionResponse::Array(items) = response else {
+            panic!("{name}: completion must return an item array");
+        };
+        let mut actual: Vec<_> = items
+            .into_iter()
+            .map(|item| (item.label, item.kind))
+            .collect();
+        actual.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(
+            actual,
+            vec![
+                ("available".into(), Some(CompletionItemKind::FIELD)),
+                ("cases".into(), Some(CompletionItemKind::PROPERTY)),
+                ("default_val".into(), Some(CompletionItemKind::PROPERTY)),
+                ("idents".into(), Some(CompletionItemKind::PROPERTY)),
+            ],
+            "{name}: complete the inner member using its type and the member option schema"
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn scalar_arrow_completion_uses_member_options_and_stops_at_parent_close() {
+    use tower_lsp::lsp_types::CompletionItemKind;
+
+    let workspace = TempWorkspace::new("scalar_arrow_completion");
+    let text =
+        "nest->\nstruct Outer { value: i32, sibling: i32 }\ncomplex->\nfor Outer { value =>\n}\n\n";
+    let uri = workspace.write("main.chrn", text);
+    let mut session = Session::new().await;
+    let diagnostics = session.open(&uri, text).await;
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    assert_eq!(
+        session
+            .backend()
+            .docs
+            .read()
+            .get(uri.as_str())
+            .unwrap()
+            .as_str(),
+        text
+    );
+
+    let mut position = position_of(text, "value =>", 0);
+    position.character += "value =>".len() as u32;
+    let response = session.completion(&uri, position, Some(">")).await.unwrap();
+    let CompletionResponse::Array(items) = response else {
+        panic!("completion must return an item array");
+    };
+    let mut actual: Vec<_> = items
+        .into_iter()
+        .map(|item| (item.label, item.kind))
+        .collect();
+    actual.sort_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(
+        actual,
+        vec![
+            ("cases".into(), Some(CompletionItemKind::PROPERTY)),
+            ("default_val".into(), Some(CompletionItemKind::PROPERTY)),
+            ("idents".into(), Some(CompletionItemKind::PROPERTY)),
+        ]
+    );
+
+    let mut after_close = position_of(text, "}\n\n", 0);
+    after_close.line += 1;
+    after_close.character = 0;
+    let response = session.completion(&uri, after_close, None).await.unwrap();
+    let CompletionResponse::Array(items) = response else {
+        panic!("completion must return an item array");
+    };
+    assert!(items.iter().any(|item| item.label == "let"));
+}

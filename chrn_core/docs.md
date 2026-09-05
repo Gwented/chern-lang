@@ -17,18 +17,22 @@ First {
 // If there is no tab, why pay the indentation overhead of if there were CCurlies?
 // The first seems -$#9)$ ok this is the format [ADDRESS ME]
 
+// There's some level of oddity in what should be a type directive (As it's called internally) and what should be an "Option". Something like `#ignore` seems best as an actual directive, but `#unicode` sound like an option that should just expect to be applied to `char`, rather than an entire directive. We'll see.
+
+// Scripting language or config language? Schema language? It's not really a script it's more so a standard for depicting as many language concepts as possible, which produces a configuration, that dictates how serialized data is consumed.
 # Language intent
-- This is a configuration language that is meant to have a serialized data representation paired with it which allows for typing cross-language serialization configuration. This allows for the avoidance of any annotations or macros that would be required inline in a language, and most favorably allows for cross-language serial configuration. The scripting language can either use the keyword [`bind`](#keywords) to define where the serialized file is, or use `@def` and `@end` syntax inside the serialized data itself which allows for the same behavior.
+- This is a configuration language that is meant to have a serialized data representation paired with it which allows for typing cross-language serialization configuration. This allows for the avoidance of any annotations or macros that would be required inline in a language, and most favorably allows for cross-language serial configuration. The config language can either use the keyword [`bind`](#keywords) to define where the serialized file is, or use `@def` and `@end` syntax inside the serialized data itself which allows for the same behavior.
 
 - Features such as boundaries, directives, and anything that is beyond just setting serialized data details or serialized data specific settings are not intended to be heavily used.
 
-- The projected main use-case of this language is as a library for inside of a programming language it is available for, which takes in a path to a script file that could contain the serialized data too, or separately having the script file and data given as arguments.
+- The projected main use-case of this language is as a library for inside of a programming language it is available for, which takes in a path to a config file that could contain the serialized data too, or separately having the config file and data given as arguments.
 
 So something like:
 
 ```rust
 use chrn_json;
 
+#[derive(Cereal, Decereal)]
 struct User {
     id: u32
     age: u8
@@ -36,7 +40,7 @@ struct User {
 
 // Uhh wait
 fn main() {
-    let script_path = "path/to/script/file"
+    let cfg_path = "path/to/cfg/file"
     let user = User { id: 0, age: 0 }
 
     chrn_json::serialize(script_path, user)
@@ -48,9 +52,7 @@ fn main() {
 }
 ```
 
-Would also have something similar to the pattern of cargo-clippy cargo clippy so that extending upon the tool is easier.
-
-# SCRIPT
+# CONFIG
 
 ## BEHAVIOR
 - Ends program by default when type information is incorrect unless [`#warn`](#directives) or [`#ignore`](#directives) is used.
@@ -327,7 +329,6 @@ export alias default() = [IsEmpty]
 // Neutral cannot be used after this
 var->
     name: str
-override->
 ```
 
 
@@ -379,10 +380,9 @@ nest->
     }
 ```
 
-// Maybe rename to attributes or properties
-`complex`: Define complex rules associated with an already defined type. This is where settings attributes like what casing to look for or default values to assign would be set.
+`complex`: Define complex rules associated with an already defined type. This is where settings attributes like what casing to look for or default values to assign would be set. This also allows for `override` keyword embedding. Defining a config root, which is the main structural type used in `complex`, you use `for` when defining a type-based config, and `override` for overriding language defaults.
 
-Searchable sections: `var`, `nest` and `neutral`
+Searchable sections: `var`, `nest`, `neutral` (and intrinsic scopes when using `override`)
 
 `complex` can have at most two nesting levels. Which is "Thing { inner {} }" where "Thing { inner { inner_inner {} } }" would be an error at inner_inner.
 
@@ -390,10 +390,10 @@ To avoid redundancy the examples will use the following structures:
 
 ```chrn
 nest->
-    struct Cat {
+    struct Person {
         name: str
         age: u8
-        mortgage: BigFloat
+        balance: BigFloat
         stressLevel: StressLevel
     }
 
@@ -401,11 +401,6 @@ nest->
         HIGH
         MEDIUM
         LOW
-    }
-
-    struct Home {
-        price: BigFloat
-        pastOwners: u16
     }
 ```
 
@@ -416,15 +411,14 @@ nest->
 
 ```chrn
 complex->
-    // This is implicitly known as the already defined "Cat" struct within a complex section
-    StressLevel {
+    for Person {
         // This `casing` option would check if "snake_case" is a valid preset option, then attempt to 
         // string match multiple versions of the same name and procedurely convert it's convention.
         // ie. "StressLevel" would be searched by "StressLevel", "stress_level" and "Stress_Level"
         casing = ["snake_case", "UpperSnakeCase"]
 
         // If only one value is present the outer brackets can be omitted
-        identifiers = "Happy"
+        idents = "Happy"
     }
 ```
 
@@ -433,21 +427,62 @@ complex->
 
 ```chrn
 complex->
-    Cat {
+    for Person {
         cases = ["snake_case", "UpperSnakeCase"]
 
         // Looks for member with identifier "stressLevel"
         stressLevel {
-            // Looks for member "HIGH" within the type of stressLevel which is the most recent parent
-            HIGH {
-                idents = "High"
-            }
+            idents = "__GNU_SOURCE"
         }
 
-        identifiers = "Happy"
+        idents = "Happy"
 
-        mortgage {/*code*/}
+        balance {/*code*/}
     }
+```
+
+
+### Override config roots
+
+Keyword `override` can be used instead of `for` to do a global override of types, given a specific language. Local overrides override the global override.
+
+```chrn
+// When a config is loaded, and the langauge is java, the default `chrn` conversions instead use what
+// was defined here for whatever was changed.
+override JAVA {
+    types {
+        // In java, any type that uses the lhs, will become the rhs.
+        change i8, i16 = java::int
+    }
+}
+
+override PYTHON {
+    types {
+        // Would of course be the default behavior internally
+        change bool = python::bool
+        // Does this look weird? Would that be done in python? What is a python? What is a snake?
+        // Action potential.
+        f16, f32, f64, f128 = python::float
+    }
+}
+```
+
+### Embedded override
+
+As mentioned, override can be applied locally to a type, which has priority over global overrides.
+
+```chrn
+for Person {
+    age {
+        // This would ONLY apply to the field `Person` in a Rust context.
+        override RUST=>types { change u8 = u32 }
+
+        // Having SOME sort of "self = u32" like syntax is probably best to avoid the rigid nature
+        // of manually typing the type, that we already know, and that is the only type that can actually
+        // be changed because a local "u16 = u32" won't mean anything to a member that doesn't have a u16
+        }
+    }
+}
 ```
 
 // SHOW OVER-NESTING EXAMPLE HERE
@@ -503,7 +538,8 @@ complex->
 #### IMPORTANT NOTES
 
 ##### Syntax shortening with `=>`
-`=>` can be used to shorten syntax if no properties are desired.
+`=>` can be used to shorten syntax if no properties are desired. This cannot be used for a config root, but any config members later on can use it. There needs to be a delimiter to actually show where the root stops and ends which is why the root needs it.
+
 Example:
 ```chrn
 // What if the docs refuse to compile?
@@ -519,51 +555,49 @@ complex->
     First=>second { idents = "different" }
 ```
 
-NOTE: This is mainly meant for `override` since it has no nesting limit and may prefer such arrow usage.
+NOTE: This is mainly meant for `override` since it has no nesting limit and may prefer such arrow usage due to config nesting being verbose at times.
 
-# UPDATE
 ##### Member access
 Member access like:
 ```chrn
     other_namespace::Thing {}
 ```
-**CANNOT** be done.
+Takes precedence over any config defined inside another module.
 
-This is because there does not currently seem to be any intrinsic benefit to doing so other than increasing the possible complexity of code, nor is it clear how this would affect actual property setting.
-
-For example, It could be:
-* Implicitly globally applied to all usages of Thing
-* Directly mutating the external module that declared Thing so that it uses it's specific config
-* An optional external mutation where you use a directive to determine whether or not it should mutate
-None of these are very concrete to where just enforcing that the current module's defined type must be the root for any config used is currently the only way this is done (This is not final)
-
-##### Recursive types within configs
-Recursive types are allowed to be defined within configs.
-
-For example:
 ```chrn
+// in other_module
 nest->
-struct Orange {
-    orange: Orange
+struct Floor {
+    is_alive: bool
 }
 complex->
-Orange {
-    // This applies to the actual type of `Orange` and it's possible identifiers
-    idents = ["Urang", "Crust"]
-    orange {
-        idents = "Recursive Orange"
-        // This applies to the member's possible identifiers
+    for Floor {
+        idents = "ignored"
     }
-}
+
+// in main
+complex->
+    // The floor implementation local to this module takes priority
+    other_module::Floor {
+        idents = "floor"
+    }
 ```
 
-# DOES NOT EXIST YET
-`override`: Controls elements such as possible namespace casing to also look for and setting language specific defaults. Language defaults exist intrinsically but this can change any if needed.
+##### Scope narrowing
 
-override sections use the same exact semantics as the earlier explained `complex` scope's configs. The only difference is that override does NOT restrict nesting levels, and strictly acts on language known semantics.
+To avoid possible name collision in rare scenarios, `var` and `nest` can be used after `for` to specifically choose which scope to search.
+// Maybe also allow for var enum/for nest struct, etc, to avoid same name structure issues.
 
-# DOES NOT EXIST YET
--------------------------------
+```chrn
+var->
+    same: i32
+nest->
+    struct same {}
+complex->
+    // No collision
+    for var same {}
+    for nest same {}
+```
 
 ## Directives
 
@@ -646,23 +680,26 @@ var->
 
 ```chrn
 @def
-    import "chrn.chrn" as cherning
-    import "definitions.chrn"
+import "chrn.chrn" as cherning
+import "definitions.chrn"
 
-    let stuff = cherning::MAGIC_NUMBER * 2
+let stuff = cherning::MAGIC_NUMBER * 2
 
-    var->
-        name: str
-        age: u8 #warn #bin
-        pets: List<Pet> [!IsEmpty, Range(5, 15)]
-        opinionated_c: core::i32
-    nest->
-        struct Pet {
-            name: str [!IsWhitespace]
-            color: Color
-        }
+var->
+name: str
+age: u8 #warn #bin
+pets: List<Pet> [!IsEmpty, Range(5, 15)]
+opinionated_c: core::i32
 
-        enum Color {Red: Tuple<u8> Blue: Tuple<u8> Green: Tuple<u8> } #hex
+nest->
+struct Pet {
+    name: str [!IsWhitespace]
+    color: Color
+}
+
+enum Color {Red: Tuple<u8> Blue: Tuple<u8> Green: Tuple<u8> } #hex
+
+complex->
 @end
 ```
 

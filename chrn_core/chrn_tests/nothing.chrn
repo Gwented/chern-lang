@@ -2,14 +2,13 @@
 export let WRITE = 0b1
 
 // import "../chrn_core/chrn_tests/nothing.chrn"
-// import "../chrn_core/chrn_tests/other.chrn"
+import "../chrn_core/chrn_tests/other.chrn"
 // Maybe this shouldn't be seen as a valid import
 // import "../chrn_core/chrn_tests/def.chrn"
 // import "../chrn_core/chrn_tests/nothing.chrn"
-import "../chrn_core/chrn_tests/core.chrn"
+// import "../chrn_core/chrn_tests/core.chrn"
 
 let x = i32::MIN
-
 
 // if this was something that wanted to be added, that would then mean the compiler store needs to be 
 // mutable, but the environments USE the compiler store, which makes it hard to concat and intern
@@ -20,116 +19,17 @@ let x = i32::MIN
 
 nest->
     struct Person {
-        // another: core::Person
-        // state: State
-        // p: str #scient The error emitted by this should be able to place the directive pointers
-                          // directly under #scient. Too greedy. Feed them less.
-        // p: str #scient The 
-        // name: str
-        // age: u8
-    } #scient
+        p: Person
+    }
 
     export struct State {
         Ready: i32
         InProgress: i32
     }
-@end@defexport let READ = 0b0
-export let WRITE = 0b1
 
-// import "../chrn_core/chrn_tests/nothing.chrn"
-// import "../chrn_core/chrn_tests/other.chrn"
-import "../chrn_core/chrn_tests/nothing.chrn"
-// Maybe this shouldn't be seen as a valid import
-import "../chrn_core/chrn_tests/def.chrn"
+complex->
+for Person {
+    p {}
+}
 
-let x = 3 == 3
-
-// if this was something that wanted to be added, that would then mean the compiler store needs to be 
-// mutable, but the environments USE the compiler store, which makes it hard to concat and intern
-// these in-line. Making the envs not use direct references is something that is very much so, NOT
-// preferred, but this would need to be a runtime string otherwise, which would be odd since it
-// KNOWS both strings are const, there's no reason to make it runtime.
-// let string = "4" + "8"
-
-nest->
-    export struct Person {
-        // another: core::Person
-        // state: State
-        // p: str #scient The error emitted by this should be able to place the directive pointers
-                          // directly under #scient. Too greedy. Feed them less.
-        // p: str #scient The 
-        // name: str
-        // age: u8
-    } #scient
-
-    export enum State {
-        Ready: str [] #warn
-        InProgress
-    }
-@end@defexport let READ = 0b0
-export let WRITE = 0b1
-
-// import "../chrn_core/chrn_tests/nothing.chrn"
-// import "../chrn_core/chrn_tests/other.chrn"
-import "../chrn_core/chrn_tests/nothing.chrn"
-// Maybe this shouldn't be seen as a valid import
-import "../chrn_core/chrn_tests/def.chrn"
-
-let x = 3 == 3
-
-// if this was something that wanted to be added, that would then mean the compiler store needs to be 
-// mutable, but the environments USE the compiler store, which makes it hard to concat and intern
-// these in-line. Making the envs not use direct references is something that is very much so, NOT
-// preferred, but this would need to be a runtime string otherwise, which would be odd since it
-// KNOWS both strings are const, there's no reason to make it runtime.
-// let string = "4" + "8"
-
-nest->
-    export struct Person {
-        // another: core::Person
-        // state: State
-        // p: str #scient The error emitted by this should be able to place the directive pointers
-                          // directly under #scient. Too greedy. Feed them less.
-        // p: str #scient The 
-        // name: str
-        // age: u8
-    } #scient
-
-    export enum State {
-        Ready: str [] #warn
-        InProgress
-    }
-@end@defexport let READ = 0b0
-export let WRITE = 0b1
-
-// import "../chrn_core/chrn_tests/nothing.chrn"
-// import "../chrn_core/chrn_tests/other.chrn"
-import "../chrn_core/chrn_tests/nothing.chrn"
-// Maybe this shouldn't be seen as a valid import
-import "../chrn_core/chrn_tests/def.chrn"
-
-let x = 3 == 3
-
-// if this was something that wanted to be added, that would then mean the compiler store needs to be 
-// mutable, but the environments USE the compiler store, which makes it hard to concat and intern
-// these in-line. Making the envs not use direct references is something that is very much so, NOT
-// preferred, but this would need to be a runtime string otherwise, which would be odd since it
-// KNOWS both strings are const, there's no reason to make it runtime.
-// let string = "4" + "8"
-
-nest->
-    export struct Person {
-        // another: core::Person
-        // state: State
-        // p: str #scient The error emitted by this should be able to place the directive pointers
-                          // directly under #scient. Too greedy. Feed them less.
-        // p: str #scient The 
-        // name: str
-        // age: u8
-    } #scient
-
-    export enum State {
-        Ready: str [] #warn
-        InProgress
-    }
 @end

@@ -9,7 +9,10 @@ use crate::{
     lookup::member_lookup::MemberLookupResult,
     parser::ast::ast_exprs::PathSegment,
     script_compiler::ScriptCompiler,
-    semantic::resolution::resolution_concepts::{StaticAccessResult, TypeExprResult},
+    semantic::{
+        hir::hir_impls::LinkedConfigOverrideMemberKind,
+        resolution::resolution_concepts::{StaticAccessResult, TypeExprResult},
+    },
 };
 
 /// Struct for routing given a particular config member section origin setting
@@ -37,14 +40,14 @@ impl ConfigRootContextKind {
     pub(super) const fn type_id(&self) -> Option<TypeId> {
         match self {
             ConfigRootContextKind::Complex(ctx) => Some(ctx.type_id),
-            ConfigRootContextKind::Override(ctx) => None,
+            ConfigRootContextKind::Override(_) => None,
         }
     }
 
     /// Attempts to get `SymbolId` out of `self`
     pub(super) fn sym_id(&self) -> Option<SymbolId> {
         match self {
-            ConfigRootContextKind::Override(ctx) => Some(ctx.sym_id),
+            ConfigRootContextKind::Override(ctx) => Some(ctx.override_sym_id),
             ConfigRootContextKind::Complex(_) => None,
         }
     }
@@ -52,12 +55,13 @@ impl ConfigRootContextKind {
 
 #[derive(Debug)]
 pub(super) struct ConfigRootOverrideContext {
-    pub(super) sym_id: SymbolId,
+    /// `SymbolId` of the current `override` symbol to go into the namespace of
+    pub(super) override_sym_id: SymbolId,
 }
 
 impl ConfigRootOverrideContext {
-    pub(super) const fn new(sym_id: SymbolId) -> Self {
-        Self { sym_id }
+    pub(super) const fn new(override_sym_id: SymbolId) -> Self {
+        Self { override_sym_id }
     }
 }
 
@@ -93,7 +97,7 @@ impl ConfigMemberContextKind {
     /// Attempts to get `SymbolId` out of `self`
     pub(super) const fn sym_id(&self) -> Option<SymbolId> {
         match self {
-            ConfigMemberContextKind::Override(ctx) => Some(ctx.sym_id),
+            ConfigMemberContextKind::Override(ctx) => Some(ctx.override_sym_id),
             ConfigMemberContextKind::Complex(_) => None,
         }
     }
@@ -101,7 +105,6 @@ impl ConfigMemberContextKind {
 
 #[derive(Debug)]
 pub(super) struct ConfigMemberComplexContext {
-    /// `MemberId` of `self`
     pub(super) memb_id: MemberId,
 }
 
@@ -113,11 +116,21 @@ impl ConfigMemberComplexContext {
 
 #[derive(Debug)]
 pub(super) struct ConfigMemberOverrideContext {
-    pub sym_id: SymbolId,
+    /// `SymbolId` of the current `override` symbol to go into the namespace of
+    pub override_sym_id: SymbolId,
+    /// Is `Option` because if it's a global override usage like "override C {}" not being linked
+    /// would just be another state.
+    pub linked_kind: LinkedConfigOverrideMemberKind,
 }
 
 impl ConfigMemberOverrideContext {
-    pub(super) const fn new(sym_id: SymbolId) -> Self {
-        Self { sym_id }
+    pub(super) const fn new(
+        override_sym_id: SymbolId,
+        linked_kind: LinkedConfigOverrideMemberKind,
+    ) -> Self {
+        Self {
+            override_sym_id,
+            linked_kind,
+        }
     }
 }

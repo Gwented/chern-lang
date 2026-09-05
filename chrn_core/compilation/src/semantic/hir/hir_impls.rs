@@ -77,7 +77,7 @@ pub struct ConfigRootCommon {
     // /// ISOLATE
     // pub kind: ConfigRootKindFlat,
     /// Expects `ConfigMember`
-    pub cfg_members: Vec<ImplMemberId>,
+    pub cfg_membs: Vec<ImplMemberId>,
 }
 
 impl ConfigRootCommon {
@@ -86,14 +86,14 @@ impl ConfigRootCommon {
         cfg_root_id: ConfigRootId,
         lookup_pat: ScopeLookupPattern,
         // kind: ConfigRootKindFlat,
-        cfg_members: Vec<ImplMemberId>,
+        cfg_membs: Vec<ImplMemberId>,
     ) -> Self {
         Self {
             impl_id,
             cfg_root_id,
             lookup_pat,
             // kind,
-            cfg_members,
+            cfg_membs,
         }
     }
 }
@@ -107,30 +107,35 @@ pub struct ConfigRoot {
     /// During name resolution, we can't actually lookup the symbol since it may or may not be
     /// registered, so it's Option since it actually is `None` at some point, and could remain
     /// `None` if in a later stage it doesn't have it's target symbol found.
+    ///
     /// Must be `Namespace` or `Type`
-    //NOTE: Can only be either a type id or namespace. So maybe um...um....!
+    // Wrap in `Checked`?
     pub linked_sym_id: Option<SymbolId>,
-    /// Expects `OptionAssignmentRoot`
-    pub memb_stmts: Vec<ImplMemberId>,
+    /// What is expected depends on the root.
+    pub stmts: Vec<ImplMemberId>,
+    pub kind: ConfigRootKind,
 }
 
 impl ConfigRoot {
     pub fn new(
         common: ConfigRootCommon,
         linked_sym_id: Option<SymbolId>,
-        memb_stmts: Vec<ImplMemberId>,
+        stmts: Vec<ImplMemberId>,
+        kind: ConfigRootKind,
     ) -> ConfigRoot {
         ConfigRoot {
             common,
             linked_sym_id,
-            memb_stmts,
+            stmts,
+            kind,
         }
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigRootKind {
-    Namespace,
-    Type,
+    Override,
+    Complex,
 }
 
 #[derive(Debug)]
@@ -141,15 +146,15 @@ pub struct ConfigMemberCommon {
     // This is not a `SpannedContainer` because it may become an Option
     pub name_span: SourceSpan,
     /// `ImplMemberId` of `self`
-    pub impl_member_id: ImplMemberId,
+    pub impl_memb_id: ImplMemberId,
 }
 
 impl ConfigMemberCommon {
-    pub fn new(name_id: InternedId, name_span: SourceSpan, impl_member_id: ImplMemberId) -> Self {
+    pub fn new(name_id: InternedId, name_span: SourceSpan, impl_memb_id: ImplMemberId) -> Self {
         Self {
             name_id,
             name_span,
-            impl_member_id,
+            impl_memb_id,
         }
     }
 }
@@ -229,13 +234,29 @@ impl ConfigMemberComplexMetadata {
 
 #[derive(Debug)]
 pub struct ConfigMemberOverrideMetadata {
-    linked_sym_id: SymbolId,
+    pub linked: LinkedConfigOverrideMemberKind,
 }
 
 impl ConfigMemberOverrideMetadata {
-    pub fn new(linked_sym_id: SymbolId) -> Self {
-        Self { linked_sym_id }
+    pub const fn new(linked: LinkedConfigOverrideMemberKind) -> Self {
+        Self { linked }
     }
+}
+
+// This is getting. A bit. Just a little, concerning.
+// May or may not make this actually used by impl members
+/// All valid states for `override` links
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkedConfigOverrideMemberKind {
+    /// if it's a global override usage like "override C {}" not being linked
+    /// would just be another state
+    Global,
+    /// A `complex` type at the root being given an override means that it's overrides need to
+    /// account for a `SymbolId`
+    Root(SymbolId),
+    /// A `complex` type member being given an override means it needs to restrict itself to
+    /// targetting a `MemberSymbolKind`
+    Member(MemberId),
 }
 
 // Would be:
@@ -260,7 +281,7 @@ pub struct OptionAssignmentRoot {
 }
 
 impl OptionAssignmentRoot {
-    pub fn new(
+    pub const fn new(
         parent_impl_id: ImplId,
         member_id: ImplMemberId,
         name_id: InternedId,
@@ -290,9 +311,9 @@ impl OptionAssignmentRoot {
 #[derive(Debug)]
 pub struct OptionAssignmentMember {
     /// `MemberId` of the `ConfigMember` it is derivative of
-    pub parent_member_id: MemberId,
+    pub parent_memb_id: MemberId,
     /// `MemberId` of `self`
-    pub impl_member_id: ImplMemberId,
+    pub impl_memb_id: ImplMemberId,
     // more like option_name_id
     pub name_id: InternedId,
     pub name_span: SourceSpan,
@@ -300,16 +321,16 @@ pub struct OptionAssignmentMember {
 }
 
 impl OptionAssignmentMember {
-    pub fn new(
-        parent_member_id: MemberId,
-        impl_member_id: ImplMemberId,
+    pub const fn new(
+        parent_memb_id: MemberId,
+        impl_memb_id: ImplMemberId,
         name_id: InternedId,
         name_span: SourceSpan,
         array_expr_id: ExprId,
     ) -> OptionAssignmentMember {
         OptionAssignmentMember {
-            parent_member_id,
-            impl_member_id,
+            parent_memb_id,
+            impl_memb_id,
             name_id,
             name_span,
             array_expr_id,

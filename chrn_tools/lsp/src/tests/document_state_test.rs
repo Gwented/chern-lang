@@ -241,6 +241,50 @@ async fn test_hover_resolves_builtin_namespace_members() {
     );
 }
 
+/// Override roots and their compiler-provided namespace members are semantic
+/// symbols even though they have no user declaration AST. The LSP should expose
+/// the intrinsic namespace and terminal external type instead of treating them
+/// as unknown values.
+#[tokio::test(start_paused = true)]
+async fn test_hover_resolves_intrinsic_namespace_and_extern_type() {
+    let workspace = TempWorkspace::new("hover_override_symbols");
+    let text = "complex->\n    override JAVA {\n        types {\n            change i8, i16 = java::int\n        }\n    }\n";
+    let uri = workspace.write("override_symbols.chrn", text);
+
+    let mut session = Session::new().await;
+    session.open(&uri, text).await;
+
+    let namespace_hover = session
+        .hover(&uri, position_of(text, "JAVA", 0))
+        .await
+        .expect("hovering an intrinsic namespace returns contents");
+    assert!(
+        hover_text(&namespace_hover).contains("intrinsic namespace"),
+        "namespace hover identifies intrinsic scope, got `{}`",
+        hover_text(&namespace_hover)
+    );
+
+    let nested_namespace_hover = session
+        .hover(&uri, position_of(text, "java", 0))
+        .await
+        .expect("hovering a nested intrinsic namespace returns contents");
+    assert!(
+        hover_text(&nested_namespace_hover).contains("intrinsic namespace"),
+        "nested namespace hover identifies intrinsic scope, got `{}`",
+        hover_text(&nested_namespace_hover)
+    );
+
+    let extern_hover = session
+        .hover(&uri, position_of(text, "int", 0))
+        .await
+        .expect("hovering an extern type returns contents");
+    assert!(
+        hover_text(&extern_hover).contains("extern type **int**"),
+        "extern type hover identifies the terminal symbol, got `{}`",
+        hover_text(&extern_hover)
+    );
+}
+
 /// Go-to-definition inside an embedded `@def` region must return the declaration in
 /// absolute file coordinates, using the target region's `script_start`.
 #[tokio::test(start_paused = true)]
@@ -361,4 +405,131 @@ async fn test_cross_module_lookups_reach_an_unopened_exporting_file() {
         "a cross-module rename edits both files, got {:?}",
         changes.keys().collect::<Vec<_>>()
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_member_reference_uses_identifier_span_after_comment() {
+    let workspace = TempWorkspace::new("member_comment_span");
+    let dep_uri = workspace.write("dep.chrn", "export let READ = 1\n");
+    let text = format!(
+        "// header\n@def\nimport \"{}\" as deps\nlet flag = deps. /* READ */ READ\n@end\n",
+        dep_uri.to_file_path().unwrap().display()
+    );
+    let uri = workspace.write("main.chrn", &text);
+    let mut session = Session::new().await;
+    session.open(&uri, &text).await;
+    let start = position_of(&text, "READ", 1);
+    let range = Range::new(start, Position::new(start.line, start.character + 4));
+
+    let state = session.backend().doc_cache.get(uri.as_str()).unwrap();
+    {
+        let state = state.read();
+        let spans: Vec<_> = state
+            .symbol_map
+            .iter()
+            .filter(|(_, entity)| matches!(entity, SemanticEntity::Symbol(_)))
+            .map(|(span, _)| {
+                &text[span.start as usize + state.script_start
+                    ..span.end as usize + state.script_start]
+            })
+            .collect();
+        assert_eq!(spans.iter().filter(|&&name| name == "READ").count(), 1);
+        assert!(
+            state
+                .get_entity_at_offset(text.find("/* READ").unwrap() + 3)
+                .is_none()
+        );
+    }
+    let response = session.definition(&uri, start).await.unwrap();
+    let GotoDefinitionResponse::Link(links) = response else {
+        panic!("expected definition links")
+    };
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0].target_uri, dep_uri);
+    assert_eq!(
+        links[0].target_selection_range,
+        Range::new(Position::new(0, 11), Position::new(0, 15))
+    );
+    let references = session.references(&uri, start).await.unwrap();
+    let local_ranges: Vec<_> = references
+        .iter()
+        .filter(|location| location.uri == uri)
+        .map(|location| location.range)
+        .collect();
+    assert_eq!(local_ranges, vec![range]);
+    let changes = session
+        .rename(&uri, start, "READ_ONLY")
+        .await
+        .unwrap()
+        .changes
+        .unwrap();
+    assert_eq!(
+        changes[&uri],
+        vec![tower_lsp::lsp_types::TextEdit::new(
+            range,
+            "READ_ONLY".into()
+        )]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_aliased_import_does_not_expose_file_name_as_module() {
+    let workspace = TempWorkspace::new("alias_scope");
+    let dep_uri = workspace.write("dep.chrn", "export let READ = 1\n");
+    let text = format!(
+        "import \"{}\" as deps\nlet valid = deps.READ\nlet invalid = dep.READ\n",
+        dep_uri.to_file_path().unwrap().display()
+    );
+    let uri = workspace.write("main.chrn", &text);
+    let mut session = Session::new().await;
+    session.open(&uri, &text).await;
+    assert!(
+        session
+            .definition(&uri, position_of(&text, "READ", 0))
+            .await
+            .is_some()
+    );
+    assert!(
+        session
+            .definition(&uri, position_of(&text, "READ", 1))
+            .await
+            .is_none()
+    );
+    for (occurrence, expected) in [(0, vec!["READ".to_string()]), (1, vec![])] {
+        let response = session
+            .completion(&uri, position_of(&text, "READ", occurrence), Some("."))
+            .await
+            .unwrap();
+        let tower_lsp::lsp_types::CompletionResponse::Array(items) = response else {
+            panic!("expected completion items");
+        };
+        assert_eq!(
+            items.into_iter().map(|item| item.label).collect::<Vec<_>>(),
+            expected
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_hover_expands_declarations_but_keeps_nested_types_compact() {
+    let workspace = TempWorkspace::new("nested_hover");
+    let text = "nest->\nstruct Inner { value: i32 }\nstruct Outer { items: List<Inner> }\n";
+    let uri = workspace.write("main.chrn", text);
+    let mut session = Session::new().await;
+    let diagnostics = session.open(&uri, text).await;
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    let hover = session
+        .hover(&uri, position_of(text, "Outer", 0))
+        .await
+        .unwrap();
+    let body = hover_text(&hover);
+    assert!(
+        body.contains("struct Outer {\n\titems: List<Inner>\n}"),
+        "{body}"
+    );
+    let hover = session
+        .hover(&uri, position_of(text, "items", 0))
+        .await
+        .unwrap();
+    assert_eq!(hover_text(&hover), "items: List<Inner>");
 }
