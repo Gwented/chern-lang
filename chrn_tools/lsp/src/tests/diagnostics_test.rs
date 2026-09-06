@@ -1,4 +1,4 @@
-use crate::analyser::{config_load_error_to_diagnostics, push_diagnostic};
+use crate::analyser::{config_load_error_to_diagnostics, push_diagnostic, version_is_current};
 use crate::tests::session::{Session, TempWorkspace};
 use chrn_utils::arena::Arena;
 use chrn_utils::core_error::ConfigLoadError;
@@ -10,6 +10,26 @@ use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_region::SourceRegion;
 use chrn_utils::source_map::source_span::SourceSpan;
 use tower_lsp::lsp_types::{DiagnosticSeverity, Position, Range};
+
+#[test]
+fn test_missing_or_replaced_generation_is_stale() {
+    let uri = tower_lsp::lsp_types::Url::parse("file:///generation.chrn").unwrap();
+    let versions = parking_lot::RwLock::new(std::collections::HashMap::new());
+
+    assert!(
+        !version_is_current(&versions, &uri, 7),
+        "closing a document removes its generation, so detached work is stale"
+    );
+
+    versions.write().insert(uri.to_string(), 7);
+    assert!(version_is_current(&versions, &uri, 7));
+
+    versions.write().insert(uri.to_string(), 8);
+    assert!(
+        !version_is_current(&versions, &uri, 7),
+        "work from an older generation is stale after replacement"
+    );
+}
 
 #[test]
 fn test_config_load_error_to_diagnostics_uses_absolute_positions() {

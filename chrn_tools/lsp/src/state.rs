@@ -75,8 +75,12 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use crate::analyser;
+
+/// Maximum time an interactive request waits for analysis to release a document.
+pub(crate) const STATE_LOCK_TIMEOUT: Duration = Duration::from_millis(500);
 
 use chrn_utils::arena::Arena;
 use chrn_utils::budget::mem_budget::{BudgetResult, MemoryBudget};
@@ -245,13 +249,13 @@ impl DocumentState {
     /// occurred when the old `ensure_analyzed` held the lock while calling
     /// `DocumentCache::get_text`.
     ///
-    /// Returns the list of imported module URI strings (empty if already analyzed).
+    /// Returns imported module URI strings, or `None` if already analyzed.
     pub(crate) fn ensure_analyzed(
         &mut self,
         resolution: analyser::ModuleResolution,
-    ) -> Vec<String> {
+    ) -> Option<Vec<String>> {
         if self.compiler.is_some() {
-            return Vec::new();
+            return None;
         }
 
         let mut chrn_cfg = ChrnConfig::default();
@@ -312,13 +316,7 @@ impl DocumentState {
                 Some(rid) => rid,
                 None => continue,
             };
-            // The old `extract_region` method was misleadingly named — it
-            // simply returned a reference rather than removing anything.  Use
-            // `get` to preserve the region in the arena for later stages.
-            let region = match self.region_arena.get(src_region_id) {
-                Some(r) => r,
-                None => continue,
-            };
+            let region = &self.region_arena[src_region_id];
 
             let parse_result = if mod_idx == 0 {
                 // Reuse pre-computed tokens for main module
@@ -520,7 +518,7 @@ impl DocumentState {
 
         self.build_symbol_map();
 
-        imported_uris
+        Some(imported_uris)
     }
 
     fn build_symbol_map(&mut self) {
@@ -614,16 +612,15 @@ impl DocumentState {
                     {
                         let abs_alias = ast.get_alias(ast_id);
                         for (i, _param) in adef.params.iter().enumerate() {
-                            if let Some(abs_param) = abs_alias.params.get(i) {
-                                map.push((
-                                    abs_param.name_span,
-                                    SemanticEntity::Local {
-                                        name_id: abs_param.name_id,
-                                        decl_span: abs_param.name_span,
-                                        owner_sym_id: Some(adef.sym_id),
-                                    },
-                                ));
-                            }
+                            let abs_param = &abs_alias.params[i];
+                            map.push((
+                                abs_param.name_span,
+                                SemanticEntity::Local {
+                                    name_id: abs_param.name_id,
+                                    decl_span: abs_param.name_span,
+                                    owner_sym_id: Some(adef.sym_id),
+                                },
+                            ));
                         }
                     }
                 }
@@ -796,7 +793,17 @@ impl DocumentState {
         // Sorting by start offset lets the lookup binary-search instead of
         // scanning the whole map; the longest span bounds how far back from the
         // landing point a containing span can begin.
-        map.sort_unstable_by_key(|(span, _)| (span.start, span.end));
+        // A config name can also resolve to a concrete field or namespace. Keep
+        // that resolved semantic identity instead of retaining two entries for
+        // the same token and making point lookup depend on equal-key sort order.
+        map.sort_by_key(|(span, entity)| {
+            let fallback = matches!(
+                entity,
+                SemanticEntity::ConfigMember { .. } | SemanticEntity::ConfigOption { .. }
+            );
+            (span.start, span.end, fallback)
+        });
+        map.dedup_by(|(right_span, _), (left_span, _)| right_span == left_span);
         self.max_span_len = map
             .iter()
             .map(|(span, _)| span.end.saturating_sub(span.start))
@@ -948,9 +955,7 @@ impl DocumentState {
         };
 
         let main_id = ModuleId::new(0);
-        let Some(main_mod) = compiler.mods.get(main_id) else {
-            return origins;
-        };
+        let main_mod = &compiler.mods[main_id];
 
         // Each of the main module's own imports seeds the walk with its own span;
         // everything reached from there inherits it.
@@ -971,13 +976,10 @@ impl DocumentState {
                 continue;
             }
 
-            let Some(module) = compiler.mods.get(mod_id) else {
-                continue;
-            };
+            let module = &compiler.mods[mod_id];
 
-            if let Some(region_id) = module.region_id
-                && let Some(region) = self.region_arena.get(region_id)
-            {
+            if let Some(region_id) = module.region_id {
+                let region = &self.region_arena[region_id];
                 let label = self
                     .interner
                     .search_path(region.path_id)
@@ -1060,24 +1062,22 @@ impl DocumentState {
     /// they are built-in names without a user-visible definition site.
     fn symbol_site(&self, sym_id: SymbolId) -> Option<(&AstInfo, AstId, &Path)> {
         let compiler = self.compiler.as_ref()?;
-        let sym = compiler.syms.get(sym_id)?;
+        let sym = &compiler.syms[sym_id];
         let ast_id = sym.ast_id?;
         let owner_id = match sym.sym_origin {
             SymbolOrigin::Module(mid) => mid.id as usize,
             SymbolOrigin::Compiler => 0,
         };
-        let ast = self.asts.get(owner_id)?.as_ref()?;
-        let module = compiler.mods.get(ModuleId::new(owner_id as u32))?;
-        let region = self.region_arena.get(module.region_id?)?;
+        let ast = self.asts[owner_id].as_ref()?;
+        let module = &compiler.mods[ModuleId::new(owner_id as u32)];
+        let region = &self.region_arena[module.region_id?];
         Some((ast, ast_id, self.interner.search_path(region.path_id)))
     }
 
     /// Path of the file backing `mod_id`'s source region.
     fn module_path(&self, mod_id: ModuleId) -> Option<&Path> {
         let compiler = self.compiler.as_ref()?;
-        let region = self
-            .region_arena
-            .get(compiler.mods.get(mod_id)?.region_id?)?;
+        let region = &self.region_arena[compiler.mods[mod_id].region_id?];
         Some(self.interner.search_path(region.path_id))
     }
 
@@ -1106,7 +1106,7 @@ impl DocumentState {
                 field_idx,
             } => {
                 let (ast, ast_id, path) = self.symbol_site(*owner_sym_id)?;
-                let field = ast.get_struct(ast_id).fields.get(*field_idx)?;
+                let field = &ast.get_struct(ast_id).fields[*field_idx];
                 Some((path, field.name_span, Some(*owner_sym_id)))
             }
             SemanticEntity::Variant {
@@ -1114,7 +1114,7 @@ impl DocumentState {
                 variant_idx,
             } => {
                 let (ast, ast_id, path) = self.symbol_site(*owner_sym_id)?;
-                let variant = ast.get_enum(ast_id).variants.get(*variant_idx)?;
+                let variant = &ast.get_enum(ast_id).variants[*variant_idx];
                 Some((path, variant.name_span, Some(*owner_sym_id)))
             }
             // Locals and configs are always declared in the main module.
@@ -1181,7 +1181,9 @@ impl DocumentState {
 
         let mut results = Vec::new();
         for (state_uri, state_arc) in states {
-            let state = state_arc.read();
+            let Some(state) = state_arc.try_read_for(STATE_LOCK_TIMEOUT) else {
+                continue;
+            };
             for (span, ent) in &state.symbol_map {
                 // `definition_site` walks arenas and, for members, the owning AST
                 // node.  The owner check reads the entity's own fields, so it
@@ -1298,9 +1300,9 @@ fn module_inputs<'a>(
 ) -> Vec<Option<(&'a AstInfo, &'a SourceRegion)>> {
     (0..mods.len())
         .map(|mod_idx| {
-            let ast_info = asts.get(mod_idx)?.as_ref()?;
+            let ast_info = asts[mod_idx].as_ref()?;
             let region_id = mods[ModuleId::new(mod_idx as u32)].region_id?;
-            Some((ast_info, regions.get(region_id)?))
+            Some((ast_info, &regions[region_id]))
         })
         .collect()
 }
@@ -1537,6 +1539,41 @@ impl DocumentCache {
         state_arc
     }
 
+    /// Inserts a prepared state only while `is_current` still holds under the
+    /// cache write lock. Callers use this to make their generation check atomic
+    /// with cache mutation: a newer edit either wins before this check or waits
+    /// and invalidates the inserted state immediately afterward.
+    pub fn insert_or_get_when<F>(
+        &self,
+        uri: &str,
+        text: Arc<String>,
+        state: DocumentState,
+        is_current: F,
+    ) -> Option<Arc<RwLock<DocumentState>>>
+    where
+        F: FnOnce() -> bool,
+    {
+        let mut cache = self.inner.write();
+        if !is_current() {
+            return None;
+        }
+        if let Some(existing) = self.hit(&cache, uri, &text) {
+            return Some(existing);
+        }
+
+        self.evict_if_needed(&mut cache);
+        let state_arc = Arc::new(RwLock::new(state));
+        cache.docs.insert(
+            uri.to_string(),
+            (
+                text,
+                Arc::clone(&state_arc),
+                AtomicU64::new(self.next_tick()),
+            ),
+        );
+        Some(state_arc)
+    }
+
     /// Evicts the least-recently-used entries when the cache is at capacity.
     fn evict_if_needed(&self, cache: &mut CacheInner) {
         if cache.docs.len() >= self.max_size {
@@ -1555,28 +1592,83 @@ impl DocumentCache {
             for key in &keys_to_remove {
                 cache.docs.remove(key);
                 if let Some(imports) = cache.imports.remove(key) {
+                    let mut empty_dependents = Vec::new();
                     for imp in imports {
                         if let Some(dep_set) = cache.dependents.get_mut(&imp) {
                             dep_set.remove(key);
+                            if dep_set.is_empty() {
+                                empty_dependents.push(imp);
+                            }
                         }
                     }
+                    for imp in empty_dependents {
+                        cache.dependents.remove(&imp);
+                    }
                 }
-                cache.dependents.remove(key);
+                if cache.dependents.get(key).is_some_and(HashSet::is_empty) {
+                    cache.dependents.remove(key);
+                }
             }
         }
     }
 
     /// Register the set of module URIs that `uri` imports.
     /// Updates the reverse `dependents` index accordingly.
-    pub fn register_dependencies(&self, uri: &str, imported_uris: &[String]) {
+    pub fn register_dependencies(&self, uri: &str, imported_uris: &[String]) -> bool {
+        let Some(state) = self.get(uri) else {
+            return false;
+        };
+        self.register_dependencies_for_state(uri, &state, imported_uris)
+    }
+
+    /// Registers dependencies only if `state` is still the cache entry for `uri`.
+    /// This prevents a completed stale analysis from recreating graph edges after
+    /// an edit, close, or newer analysis replaced its state.
+    pub fn register_dependencies_for_state(
+        &self,
+        uri: &str,
+        state: &Arc<RwLock<DocumentState>>,
+        imported_uris: &[String],
+    ) -> bool {
+        self.register_dependencies_for_state_when(uri, state, imported_uris, || true)
+    }
+
+    pub fn register_dependencies_for_state_when<F>(
+        &self,
+        uri: &str,
+        state: &Arc<RwLock<DocumentState>>,
+        imported_uris: &[String],
+        is_current: F,
+    ) -> bool
+    where
+        F: FnOnce() -> bool,
+    {
         let mut cache = self.inner.write();
+
+        if !is_current() {
+            return false;
+        }
+
+        let Some((_, cached_state, _)) = cache.docs.get(uri) else {
+            return false;
+        };
+        if !Arc::ptr_eq(cached_state, state) {
+            return false;
+        }
 
         // Remove old reverse entries for previous imports of this URI
         if let Some(old_imports) = cache.imports.remove(uri) {
+            let mut empty_dependents = Vec::new();
             for old_dep in &old_imports {
                 if let Some(dep_set) = cache.dependents.get_mut(old_dep.as_str()) {
                     dep_set.remove(uri);
+                    if dep_set.is_empty() {
+                        empty_dependents.push(old_dep.clone());
+                    }
                 }
+            }
+            for old_dep in empty_dependents {
+                cache.dependents.remove(&old_dep);
             }
         }
 
@@ -1590,11 +1682,29 @@ impl DocumentCache {
                 .insert(uri.to_string());
         }
         cache.imports.insert(uri.to_string(), new_imports);
+        true
+    }
+
+    /// Removes `uri` only if `state` is still its current cache entry.
+    pub fn invalidate_if_state(&self, uri: &str, state: &Arc<RwLock<DocumentState>>) -> bool {
+        let mut cache = self.inner.write();
+        let should_invalidate = cache
+            .docs
+            .get(uri)
+            .is_some_and(|(_, cached, _)| Arc::ptr_eq(cached, state));
+        if should_invalidate {
+            Self::invalidate_inner(&mut cache, uri);
+        }
+        should_invalidate
     }
 
     /// Invalidate a document and all transitive dependents (BFS).
     pub fn invalidate(&self, uri: &str) {
         let mut cache = self.inner.write();
+        Self::invalidate_inner(&mut cache, uri);
+    }
+
+    fn invalidate_inner(cache: &mut CacheInner, uri: &str) {
         let mut worklist = VecDeque::new();
         worklist.push_back(uri.to_string());
 
@@ -1611,13 +1721,26 @@ impl DocumentCache {
 
             cache.dependents.remove(&current);
             if let Some(imports) = cache.imports.remove(&current) {
+                let mut empty_dependents = Vec::new();
                 for imp in imports {
                     if let Some(dep_set) = cache.dependents.get_mut(&imp) {
                         dep_set.remove(&current);
+                        if dep_set.is_empty() {
+                            empty_dependents.push(imp);
+                        }
                     }
+                }
+                for imp in empty_dependents {
+                    cache.dependents.remove(&imp);
                 }
             }
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn dependency_graph_sizes(&self) -> (usize, usize) {
+        let cache = self.inner.read();
+        (cache.imports.len(), cache.dependents.len())
     }
 
     /// Looks up the [`DocumentState`] for `uri`, returning `None` if not cached.
@@ -1849,9 +1972,7 @@ impl<'a> RefCollector<'a> {
     /// segments can use. Terminal symbols, including `ExternType`, remain
     /// indexed even though they cannot be traversed further.
     fn cursor_for_symbol(&mut self, span: SourceSpan, sym_id: SymbolId) -> PathCursor {
-        let Some(sym) = self.compiler.syms.get(sym_id) else {
-            return PathCursor::Opaque;
-        };
+        let sym = &self.compiler.syms[sym_id];
 
         match sym.kind {
             SymbolKind::Namespace => self.push_namespace(span, sym_id, sym),
@@ -1865,7 +1986,7 @@ impl<'a> RefCollector<'a> {
                     .map(PathCursor::Type)
                     .unwrap_or(PathCursor::Opaque)
             }
-            SymbolKind::Directive(_) | SymbolKind::ExternType => {
+            SymbolKind::Directive(_) | SymbolKind::ExternType(_) => {
                 self.map.push((span, SemanticEntity::Symbol(sym_id)));
                 PathCursor::Opaque
             }
@@ -2091,23 +2212,23 @@ impl RefCollector<'_> {
         type_id: TypeId,
     ) -> PathCursor {
         let compiler = self.compiler;
-        let Some(ty_info) = compiler.types.get(type_id) else {
-            return PathCursor::Opaque;
-        };
+        let ty_info = &compiler.types[type_id];
 
         let (entity, member_type_id) = match &ty_info.ty {
             Type::Struct(sdef) => {
                 let Some(field_idx) = sdef.fields.iter().position(|member_id| {
                     matches!(
-                        compiler.sym_members.get(*member_id),
-                        Some(MemberSymbolKind::Field(f)) if f.name_id == name_id
+                        &compiler.sym_members[*member_id],
+                        MemberSymbolKind::Field(f) if f.name_id == name_id
                     )
                 }) else {
                     return PathCursor::Opaque;
                 };
-                let member_type_id = match compiler.sym_members.get(sdef.fields[field_idx]) {
-                    Some(MemberSymbolKind::Field(f)) => Some(f.type_id),
-                    _ => None,
+                let member_type_id = match &compiler.sym_members[sdef.fields[field_idx]] {
+                    MemberSymbolKind::Field(f) => Some(f.type_id),
+                    MemberSymbolKind::Variant(_) => {
+                        unreachable!("struct field id must reference a field member")
+                    }
                 };
                 (
                     SemanticEntity::Field {
@@ -2120,15 +2241,17 @@ impl RefCollector<'_> {
             Type::Enum(edef) => {
                 let Some(variant_idx) = edef.variants.iter().position(|member_id| {
                     matches!(
-                        compiler.sym_members.get(*member_id),
-                        Some(MemberSymbolKind::Variant(v)) if v.name_id == name_id
+                        &compiler.sym_members[*member_id],
+                        MemberSymbolKind::Variant(v) if v.name_id == name_id
                     )
                 }) else {
                     return PathCursor::Opaque;
                 };
-                let member_type_id = match compiler.sym_members.get(edef.variants[variant_idx]) {
-                    Some(MemberSymbolKind::Variant(v)) => v.type_id,
-                    _ => None,
+                let member_type_id = match &compiler.sym_members[edef.variants[variant_idx]] {
+                    MemberSymbolKind::Variant(v) => v.type_id,
+                    MemberSymbolKind::Field(_) => {
+                        unreachable!("enum variant id must reference a variant member")
+                    }
                 };
                 (
                     SemanticEntity::Variant {
@@ -2142,21 +2265,18 @@ impl RefCollector<'_> {
                 // Built-in namespace members such as `i32::MAX` live in the
                 // built-in type's associated namespace scope, not in member
                 // arenas like struct fields do.
-                let member_sym_id = compiler
-                    .syms
-                    .get(builtin_info.sym_id)
-                    .and_then(|builtin_sym| match builtin_sym.associated_scope {
-                        Some(AssociatedScopeKind::Scope(scope_id)) => Some(scope_id),
-                        _ => None,
-                    })
-                    .and_then(|scope_id| {
-                        compiler.scopes[scope_id]
-                            .scope
-                            .table
-                            .iter_interned()
-                            .find(|(name, _)| *name == name_id)
-                            .map(|(_, sym_id)| sym_id)
-                    });
+                let member_sym_id = match compiler.syms[builtin_info.sym_id].associated_scope {
+                    Some(AssociatedScopeKind::Scope(scope_id)) => Some(scope_id),
+                    _ => None,
+                }
+                .and_then(|scope_id| {
+                    compiler.scopes[scope_id]
+                        .scope
+                        .table
+                        .iter_interned()
+                        .find(|(name, _)| *name == name_id)
+                        .map(|(_, sym_id)| sym_id)
+                });
                 let Some(member_sym_id) = member_sym_id else {
                     return PathCursor::Opaque;
                 };
@@ -2201,7 +2321,7 @@ impl RefCollector<'_> {
         let VariableState::Known(val_id) = self.compiler.variables[var_id].state else {
             return None;
         };
-        Some(self.compiler.values.get(val_id)?.type_id)
+        Some(self.compiler.values[val_id].type_id)
     }
 
     /// Walks a `complex->` config block and its nested members.

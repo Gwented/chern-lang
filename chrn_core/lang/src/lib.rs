@@ -14,9 +14,4 @@ pub mod values;
 pub const CFG_MAX_COMPLEX_NEST_LEVEL: u8 = 2;
 
 #[cfg(test)]
-mod tests {
-    // #[test]
-    // fn specific_name() {
-    //     panic!();
-    // }
-}
+mod tests;

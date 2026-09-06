@@ -342,7 +342,7 @@ pub(crate) fn create_diag_builder_preset(
                 sp_invalid_name_id,
                 scope_found_in,
             } => {
-                let kind = SymbolKind::to_fmt(compiler, invalid_sym_id);
+                let kind = SymbolKind::to_classified(compiler, invalid_sym_id);
                 let name = interner.search(sp_invalid_name_id.inner);
 
                 let core_msg = format!("`{name}` is a {kind} not a type");
@@ -476,6 +476,19 @@ pub(crate) fn create_diag_builder_preset(
                         .to_string()
                         .into(),
                 )
+        }
+        PresetErr::SymbolMismatch {
+            expected_kind,
+            sp_found_sym_id,
+        } => {
+            // let found_sym = &compiler.syms[found_sym_id];
+            let core_msg = format!(
+                "Expected `{}`, found `{}`",
+                expected_kind.to_classified(),
+                SymbolKind::to_classified(compiler, sp_found_sym_id.inner)
+            );
+            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
+                .add_annotation(sp_found_sym_id.span, AnnotationKind::Primary, None)
         }
         PresetErr::TypeBoundaryBoundConflict {
             inferred: current_inferred,

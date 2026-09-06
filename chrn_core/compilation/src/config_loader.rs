@@ -585,6 +585,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                 "Unexpected <eof>".to_string().into(),
             )
             .build();
+            //TODO: Should still point. The error is invisible otherwise.
 
             // If a file really did hit eof during a multi-line comment the file is more likely than
             // not broken to even attempt to view. Also the lexer would get really really scared if

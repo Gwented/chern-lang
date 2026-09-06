@@ -94,7 +94,7 @@ impl<'a> ConstraintResolver<'a> {
                         // to their ast id
                         SymbolKind::Variable(_) => self.resolve_var(sym_id, env),
                         // Users cannot define these but they exist internally.
-                        SymbolKind::ExternType
+                        SymbolKind::ExternType(_)
                         | SymbolKind::Namespace
                         | SymbolKind::Directive(_) => unreachable!(),
                     }

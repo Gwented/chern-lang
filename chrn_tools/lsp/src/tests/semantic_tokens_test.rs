@@ -98,3 +98,51 @@ async fn test_semantic_tokens_are_emitted_in_absolute_positions() {
         "`let` is a keyword token"
     );
 }
+
+/// Intrinsic namespace identifiers use the class colour while ordinary scope
+/// namespaces use the variable colour.
+#[tokio::test(start_paused = true)]
+async fn intrinsic_namespace_symbols_use_the_class_semantic_token() {
+    let workspace = TempWorkspace::new("namespace_semantic_tokens");
+    let text = "complex->\noverride JAVA {\n    types { change i32 = java::int }\n}\n";
+    let uri = workspace.write("main.chrn", text);
+
+    let mut session = Session::new().await;
+    session.open(&uri, text).await;
+    let result = session
+        .semantic_tokens(&uri)
+        .await
+        .expect("the document produces semantic tokens");
+    let SemanticTokensResult::Tokens(tokens) = result else {
+        panic!("the server advertises full-document tokens only");
+    };
+
+    let mut line = 0;
+    let mut start = 0;
+    let mut classified = Vec::new();
+    for token in tokens.data {
+        if token.delta_line == 0 {
+            start += token.delta_start;
+        } else {
+            line += token.delta_line;
+            start = token.delta_start;
+        }
+        if matches!(
+            (line, start, token.length),
+            (1, 9, 4) | (2, 19, 3) | (2, 25, 4) | (2, 31, 3)
+        ) {
+            classified.push((line, start, token.token_type));
+        }
+    }
+
+    assert_eq!(
+        classified,
+        vec![
+            (1, 9, SemanticTokenType::Class.as_u32()),
+            (2, 19, SemanticTokenType::Type.as_u32()),
+            (2, 25, SemanticTokenType::Class.as_u32()),
+            (2, 31, SemanticTokenType::Type.as_u32()),
+        ],
+        "JAVA and java are intrinsic namespace-coloured while i32 and int remain types"
+    );
+}

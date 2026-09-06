@@ -16,6 +16,7 @@
 //! After collecting all candidate [`Location`] values, overlapping/redundant ranges
 //! within each file are removed with [`crate::text::deduplicate_range_indices`].
 
+use crate::state::STATE_LOCK_TIMEOUT;
 use crate::state::{DocumentCache, DocumentState, EntityOccurrence, SemanticEntity};
 use crate::text::{LineIndex, position_to_offset};
 use chrn_utils::id_types::SymbolId;
@@ -97,7 +98,7 @@ pub fn compute_references(
     // as soon as a writer (an analysis task) is queued between the two reads.
     // Resolve the definition key under the guard, then drop it before searching.
     let (def_path, def_span, def_owner_sym_id, is_local, local_locations) = {
-        let state = state_arc.read();
+        let state = state_arc.try_read_for(STATE_LOCK_TIMEOUT)?;
 
         let byte_offset = position_to_offset(&state.text, position);
         if state.offset_in_comment(byte_offset) {

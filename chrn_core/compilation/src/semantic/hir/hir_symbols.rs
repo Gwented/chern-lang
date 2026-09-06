@@ -8,7 +8,7 @@ use chrn_utils::{
 };
 use lang::{
     chrn_classifier::{ChrnClassifiable, ChrnClassifier},
-    types::boundaries::TypeBoundaryFlags,
+    types::{boundaries::TypeBoundaryFlags, externs::ExternPlatformType},
 };
 
 use crate::{
@@ -84,12 +84,13 @@ pub enum SymbolKind {
     /// namespace.
     Namespace,
     Directive(DirectiveId),
-    ExternType,
+    //TODO: Maybe it can get it's own arena.
+    ExternType(ExternPlatformType),
 }
 
 impl SymbolKind {
     // This is getting obscure now...
-    pub fn to_fmt(compiler: &ScriptCompiler, sym_id: SymbolId) -> ChrnClassifier {
+    pub fn to_classified(compiler: &ScriptCompiler, sym_id: SymbolId) -> ChrnClassifier {
         let sym = &compiler.syms[sym_id];
         match &sym.kind {
             SymbolKind::Type(type_id) => Type::to_fmt(&compiler.types, *type_id),
@@ -99,7 +100,7 @@ impl SymbolKind {
                 AssociatedScopeKind::Scope(_) => ChrnClassifier::Namespace,
             },
             SymbolKind::Directive(_) => ChrnClassifier::Directive,
-            SymbolKind::ExternType => ChrnClassifier::ExternType,
+            SymbolKind::ExternType(_) => ChrnClassifier::ExternType,
         }
     }
     pub fn to_flat(&self) -> SymbolKindFlat {
@@ -108,7 +109,7 @@ impl SymbolKind {
             SymbolKind::Variable(_) => SymbolKindFlat::Variable,
             SymbolKind::Namespace => SymbolKindFlat::Namespace,
             SymbolKind::Directive(_) => SymbolKindFlat::Directive,
-            SymbolKind::ExternType => SymbolKindFlat::ExternType,
+            SymbolKind::ExternType(_) => SymbolKindFlat::ExternType,
         }
     }
 }
@@ -138,6 +139,18 @@ impl SymbolKindFlat {
             SymbolKindFlat::Namespace => Self::NAMESPACE_BITS,
             SymbolKindFlat::Directive => Self::DIRECTIVE_BITS,
             SymbolKindFlat::ExternType => Self::EXTERN_TYPE_BITS,
+        }
+    }
+}
+
+impl ChrnClassifiable for SymbolKindFlat {
+    fn to_classified(&self) -> ChrnClassifier {
+        match self {
+            SymbolKindFlat::Type => ChrnClassifier::Type,
+            SymbolKindFlat::Variable => ChrnClassifier::Variable,
+            SymbolKindFlat::Namespace => ChrnClassifier::Namespace,
+            SymbolKindFlat::Directive => ChrnClassifier::Directive,
+            SymbolKindFlat::ExternType => ChrnClassifier::ExternType,
         }
     }
 }

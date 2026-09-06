@@ -446,6 +446,8 @@ complex->
 
 Keyword `override` can be used instead of `for` to do a global override of types, given a specific language. Local overrides override the global override.
 
+`override` uses the `change` keyword, which abides by the structure `Type, Type, ... = Type`
+
 ```chrn
 // When a config is loaded, and the langauge is java, the default `chrn` conversions instead use what
 // was defined here for whatever was changed.
@@ -475,7 +477,7 @@ As mentioned, override can be applied locally to a type, which has priority over
 for Person {
     age {
         // This would ONLY apply to the field `Person` in a Rust context.
-        override RUST=>types { change u8 = u32 }
+        override RUST=>types { change u8 = rust::u32 }
 
         // Having SOME sort of "self = u32" like syntax is probably best to avoid the rigid nature
         // of manually typing the type, that we already know, and that is the only type that can actually

@@ -141,33 +141,6 @@ impl TypeDirective {
         }
     }
 
-    // pub fn supports_type_constraint(&self, constraint_flags: TypeBoundaryFlags) -> bool {
-    //     todo!()
-    // match self {
-    //     InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => {
-    //         match constraint_flags.flags {
-    //             TypeBoundary::Collection | TypeBoundary::HasLen if is_rec => true,
-    //             TypeBoundary::Numeric
-    //             | TypeBoundary::Integer
-    //             | TypeBoundary::SignedInteger
-    //             | TypeBoundary::UnsignedInteger
-    //             | TypeBoundary::Float
-    //             | TypeBoundary::Ordered
-    //             | TypeBoundary::Any => true,
-    //             TypeBoundary::Bool
-    //             | TypeBoundary::Collection
-    //             | TypeBoundary::HasLen
-    //             | TypeBoundary::CharacterMappable
-    //             | TypeBoundary::Char
-    //             | TypeBoundary::Ranged
-    //             | TypeBoundary::Comparable
-    //             | TypeBoundary::Str => false,
-    //         }
-    //     }
-    //     InnerArgs::Ignore | InnerArgs::Warn => true,
-    // }
-    // }
-
     pub fn boundaries(self) -> TypeBoundaryFlags {
         match self {
             TypeDirective::Scient

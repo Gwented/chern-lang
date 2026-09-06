@@ -5,6 +5,36 @@ use chrn_utils::source_map::source_span::SourceSpan;
 use std::sync::Arc;
 use tower_lsp::lsp_types::{GotoDefinitionResponse, Position, Range};
 
+#[tokio::test(start_paused = true)]
+async fn test_import_resolution_uses_unsaved_open_dependency_text_during_debounce() {
+    let workspace = TempWorkspace::new("open_dependency_overlay");
+    let old_dependency = "export let ITEM = \"old\"\n";
+    let new_dependency = "export let ITEM = 3\n";
+    let dependency_uri = workspace.write("dep.chrn", old_dependency);
+    let main_text = format!(
+        "import \"{}\" as dep\nlet value = dep::ITEM\n",
+        dependency_uri.to_file_path().unwrap().display()
+    );
+    let main_uri = workspace.write("main.chrn", &main_text);
+
+    let mut session = Session::new().await;
+    session.open(&dependency_uri, old_dependency).await;
+    session
+        .change_full_without_settle(&dependency_uri, new_dependency)
+        .await;
+    session.open(&main_uri, &main_text).await;
+
+    let hover = session
+        .hover(&main_uri, position_of(&main_text, "ITEM", 0))
+        .await
+        .expect("the imported symbol hovers");
+    assert!(
+        hover_text(&hover).contains("i64"),
+        "import analysis must use the unsaved open text, got `{}`",
+        hover_text(&hover)
+    );
+}
+
 /// `get_entity_at_offset` must return the *smallest* span containing the offset,
 /// regardless of the order entries were collected in. The lookup binary-searches a
 /// sorted map, so this also guards the sort/`max_span_len` invariant maintained by
@@ -242,13 +272,13 @@ async fn test_hover_resolves_builtin_namespace_members() {
 }
 
 /// Override roots and their compiler-provided namespace members are semantic
-/// symbols even though they have no user declaration AST. The LSP should expose
-/// the intrinsic namespace and terminal external type instead of treating them
-/// as unknown values.
+/// symbols even though they have no user declaration AST. Hover should expose
+/// each namespace and describe the value representation of external types from
+/// both supported platforms.
 #[tokio::test(start_paused = true)]
-async fn test_hover_resolves_intrinsic_namespace_and_extern_type() {
+async fn test_hover_resolves_intrinsic_namespaces_and_extern_type_metadata() {
     let workspace = TempWorkspace::new("hover_override_symbols");
-    let text = "complex->\n    override JAVA {\n        types {\n            change i8, i16 = java::int\n        }\n    }\n";
+    let text = "complex->\n    override JAVA {\n        types {\n            change i8 = java::int\n            change i16 = java::double\n            change i32 = java::boolean\n            change i64 = java::char\n            change i128 = java::String\n        }\n    }\n    override RUST {\n        types {\n            change u8 = rust::u8\n            change u16 = rust::usize\n            change u32 = rust::char\n            change u64 = rust::str\n        }\n    }\n";
     let uri = workspace.write("override_symbols.chrn", text);
 
     let mut session = Session::new().await;
@@ -259,30 +289,75 @@ async fn test_hover_resolves_intrinsic_namespace_and_extern_type() {
         .await
         .expect("hovering an intrinsic namespace returns contents");
     assert!(
-        hover_text(&namespace_hover).contains("intrinsic namespace"),
+        hover_text(&namespace_hover).contains("Intrinsic Namespace"),
         "namespace hover identifies intrinsic scope, got `{}`",
         hover_text(&namespace_hover)
     );
-
     let nested_namespace_hover = session
         .hover(&uri, position_of(text, "java", 0))
         .await
         .expect("hovering a nested intrinsic namespace returns contents");
     assert!(
-        hover_text(&nested_namespace_hover).contains("intrinsic namespace"),
+        hover_text(&nested_namespace_hover).contains("Intrinsic Namespace"),
         "nested namespace hover identifies intrinsic scope, got `{}`",
         hover_text(&nested_namespace_hover)
     );
 
-    let extern_hover = session
-        .hover(&uri, position_of(text, "int", 0))
-        .await
-        .expect("hovering an extern type returns contents");
-    assert!(
-        hover_text(&extern_hover).contains("extern type **int**"),
-        "extern type hover identifies the terminal symbol, got `{}`",
-        hover_text(&extern_hover)
-    );
+    let cases = [
+        (
+            "int",
+            "extern type **int**\n\n**Representation:** 32-bit signed integer",
+        ),
+        (
+            "rust::u8",
+            "extern type **u8**\n\n**Representation:** 8-bit unsigned integer",
+        ),
+        (
+            "usize",
+            "extern type **usize**\n\n**Representation:** pointer-width unsigned integer",
+        ),
+        (
+            "double",
+            "extern type **double**\n\n**Representation:** 64-bit floating-point number",
+        ),
+        (
+            "boolean",
+            "extern type **boolean**\n\n**Representation:** boolean",
+        ),
+        (
+            "java::char",
+            "extern type **char**\n\n**Representation:** 16-bit character (UTF-16)",
+        ),
+        (
+            "rust::char",
+            "extern type **char**\n\n**Representation:** 32-bit character (Unicode scalar value)",
+        ),
+        (
+            "str",
+            "extern type **str**\n\n**Representation:** string (UTF-8)",
+        ),
+        (
+            "String",
+            "extern type **String**\n\n**Representation:** string (UTF-16)",
+        ),
+    ];
+    let compiler_symbol_footer = "\n\n------------------------------------------------------------\n\nprivate | **Scope:** compiler";
+
+    for (needle, expected) in cases {
+        let mut position = position_of(text, needle, 0);
+        if let Some((namespace, _)) = needle.split_once("::") {
+            position.character += namespace.encode_utf16().count() as u32 + 2;
+        }
+        let hover = session
+            .hover(&uri, position)
+            .await
+            .unwrap_or_else(|| panic!("hovering external type `{needle}` returns contents"));
+        assert_eq!(
+            hover_text(&hover),
+            format!("{expected}{compiler_symbol_footer}"),
+            "external type `{needle}` reports its exact metadata"
+        );
+    }
 }
 
 /// Go-to-definition inside an embedded `@def` region must return the declaration in

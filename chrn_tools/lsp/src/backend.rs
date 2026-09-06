@@ -29,17 +29,18 @@
 //!
 //! ## Debounce / version invariant
 //!
-//! `pending_versions` tracks a monotonically increasing counter per URI.  On
-//! `did_change` the counter is bumped and a 150 ms sleep is awaited before
+//! `pending_versions` stores the current globally unique generation per URI. On
+//! `did_change` a new generation is assigned and a 150 ms sleep is awaited before
 //! analysis runs.  If another change arrives before the timer fires, the previous
-//! task is aborted (`pending_tasks`) and the new one takes over.  Analysis results
-//! carry the version they were spawned for; stale results are discarded in
+//! task is aborted (`pending_tasks`) and the new one takes over. Open and save
+//! analyses are tracked the same way. Analysis results carry the generation they
+//! were spawned for; stale results are discarded before cache mutation and in
 //! [`crate::analyser::publish_if_current`].
 
 use chrn_utils::source_map::source_span::SourceSpan;
 use compilation::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use compilation::lexer::token::Token as ScriptToken;
-use compilation::lookup::scopes::scopes_concepts;
+use compilation::lookup::scopes::{self, scopes_concepts};
 use compilation::module::module_concepts::ModuleState;
 use compilation::parser::ast::ast_concepts::AbstractConfigKind;
 use compilation::script_compiler::ScriptCompiler;
@@ -49,6 +50,7 @@ use compilation::semantic::hir::hir_impls::{
 };
 use compilation::semantic::hir::hir_symbols::{Symbol, SymbolKind, VariableState};
 use parking_lot::RwLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 use tokio::task::JoinHandle;
@@ -63,38 +65,17 @@ use chrn_utils::id_types::{ImplMemberId, InternedId, ModuleId, ScopeId, SymbolId
 use lang::config_schemas::{ConfigSchemaKind, get_cfg_schema};
 
 use crate::analyser::analyze_and_publish_task;
-use crate::analyser::resolve_document_modules;
-use crate::state::DocumentCache;
-use crate::state::DocumentState;
+use crate::analyser::{dependency_snapshots_are_current, resolve_document_modules};
+use crate::state::{DocumentCache, DocumentState, STATE_LOCK_TIMEOUT};
 use crate::text::apply_text_change;
 
 // Semantic token support (keyword/string/number highlighting)
 use crate::state::SemanticEntity;
 use chrn_utils::chrn_config::ChrnConfig;
-use chrn_utils::core_error::ConfigLoadError;
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
 use lang::types::builtins::BuiltinTypeKind as ChBuiltinTypeKind;
 use std::io::Cursor;
-
-/// Publishes config-load diagnostics without awaiting, used in synchronous helpers
-/// that cannot be `async`.
-///
-/// `script_start` is added to the relative diagnostic spans produced by the
-/// config loader so that the LSP client receives positions in the absolute
-/// file coordinate system it expects.
-fn publish_config_load_error(
-    client: Client,
-    uri: tower_lsp::lsp_types::Url,
-    text: &str,
-    err: ConfigLoadError,
-    script_start: usize,
-) {
-    let diags = crate::analyser::config_load_error_to_diagnostics(err, text, script_start);
-    tokio::spawn(async move {
-        client.publish_diagnostics(uri, diags, None).await;
-    });
-}
 
 /// Semantic token type indices matching the legend declared in [`Backend::initialize`].
 ///
@@ -142,19 +123,24 @@ impl SemanticTokenType {
 /// The central LSP server state, shared across all request handlers via `Arc`.
 ///
 /// All fields wrapped in `Arc<RwLock<_>>` are shared with async analysis tasks.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Backend {
     pub client: Client,
     /// Raw document texts keyed by URI string, kept in sync with editor state.
     pub docs: Arc<RwLock<HashMap<String, Arc<String>>>>,
-    /// Monotonic per-URI change counter; bumped on every `did_change` / `did_open`.
+    /// Current globally unique analysis generation for each open URI.
     pub pending_versions: Arc<RwLock<HashMap<String, u64>>>,
+    /// Process-wide source of unique analysis generations. Generations never
+    /// repeat when a URI is closed and reopened.
+    next_version: Arc<AtomicU64>,
     /// Hash of the last-published diagnostics per URI; used to suppress
     /// redundant `publishDiagnostics` notifications.  Only an 8-byte digest is
     /// stored per document rather than the full JSON payload.
     pub diags_cache: Arc<RwLock<HashMap<String, u64>>>,
-    /// Handles to in-flight debounce tasks so they can be aborted on newer changes.
+    /// Latest open, save, or debounced-change analysis task for each URI.
     pub pending_tasks: Arc<RwLock<HashMap<String, JoinHandle<()>>>>,
+    /// Bounds detached blocking compiler jobs when an async task is aborted.
+    analysis_slots: Arc<tokio::sync::Semaphore>,
     /// Document analysis cache: tokens, AST, compiler, symbol map.
     pub doc_cache: Arc<DocumentCache>,
 }
@@ -166,37 +152,48 @@ impl Backend {
             client,
             docs: Arc::new(RwLock::new(HashMap::new())),
             pending_versions: Arc::new(RwLock::new(HashMap::new())),
+            next_version: Arc::new(AtomicU64::new(1)),
             diags_cache: Arc::new(RwLock::new(HashMap::new())),
             pending_tasks: Arc::new(RwLock::new(HashMap::new())),
+            analysis_slots: Arc::new(tokio::sync::Semaphore::new(2)),
             doc_cache: Arc::new(DocumentCache::new(50)),
         }
     }
 
-    /// Returns an analysed [`DocumentState`](crate::state::DocumentState) for `uri`,
-    /// running analysis synchronously if needed.
+    /// Blocking half of feature-driven analysis. Call only through the bounded
+    /// [`Self::get_analyzed_state`] wrapper.
     ///
     /// Preferred over spawning a task when the caller already holds the document text
     /// (e.g. in hover / definition / references / rename handlers that need the state
     /// before they can respond).
     ///
-    /// Falls back to publishing a config-load error and returning `None` if the
-    /// document header cannot be parsed.
-    fn get_analyzed_state(
+    /// Returns `None` if the document header cannot be parsed or a state lock does
+    /// not become available within the interactive request budget.
+    fn get_analyzed_state_blocking(
         &self,
         uri: &tower_lsp::lsp_types::Url,
         text: Arc<String>,
+        expected_generation: Option<u64>,
     ) -> Option<Arc<RwLock<crate::state::DocumentState>>> {
         let uri_str = uri.to_string();
 
         // Try to get existing analyzed state first
         if let Some(state_arc) = self.doc_cache.get(&uri_str) {
-            let needs_analysis = {
-                let state = state_arc.read();
-                state.compiler.is_none() || *state.text != *text
-            };
+            let cached_text_matches = self
+                .doc_cache
+                .get_text(&uri_str)
+                .is_some_and(|cached| Arc::ptr_eq(&cached, &text) || *cached == *text);
+            if !cached_text_matches {
+                // Continue below and replace the stale cache entry.
+            } else {
+                let needs_analysis = match state_arc.try_read_for(STATE_LOCK_TIMEOUT) {
+                    Some(state) => state.compiler.is_none() || *state.text != *text,
+                    None => return Some(Arc::clone(&state_arc)),
+                };
 
-            if !needs_analysis {
-                return Some(state_arc);
+                if !needs_analysis {
+                    return Some(state_arc);
+                }
             }
         }
 
@@ -226,13 +223,9 @@ impl Backend {
                 region
             }
             ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
-                publish_config_load_error(
-                    self.client.clone(),
-                    uri.clone(),
-                    &text,
-                    cfg_err,
-                    broken_region.script_start,
-                );
+                // Background analysis owns diagnostic publication. Feature-driven
+                // analysis only needs a recoverable state.
+                _ = cfg_err;
                 main_state = ModuleState::BrokenRegion;
                 broken_region
             }
@@ -240,7 +233,7 @@ impl Backend {
                 // No region data is recoverable; the loader produced no
                 // `script_start` so the default 0 keeps the relative span
                 // shift a no-op (the file is treated as if it had no `@def`).
-                publish_config_load_error(self.client.clone(), uri.clone(), &text, cfg_err, 0);
+                _ = cfg_err;
                 return None;
             }
         };
@@ -275,6 +268,7 @@ impl Backend {
             main_state,
             &mut chrn_cfg,
             &self.doc_cache,
+            &self.docs,
             my_version,
             interner,
         );
@@ -289,21 +283,102 @@ impl Backend {
                 .append_summary(&mut cfg_loader_warns);
         }
 
-        let state_arc = self
-            .doc_cache
-            .insert_or_get(&uri_str, Arc::clone(&text), prepared.state);
+        let state_arc = self.doc_cache.insert_or_get_when(
+            &uri_str,
+            Arc::clone(&text),
+            prepared.state,
+            || {
+                if let Some(generation) = expected_generation {
+                    let generation_matches = matches!(
+                        self.pending_versions.read().get(&uri_str),
+                        Some(&current) if current == generation
+                    );
+                    generation_matches
+                        && dependency_snapshots_are_current(
+                            &prepared.dependency_snapshots,
+                            &self.docs,
+                        )
+                        && self.docs.read().get(&uri_str).is_some_and(|current| {
+                            Arc::ptr_eq(current, &text) || **current == *text
+                        })
+                } else {
+                    !self.docs.read().contains_key(&uri_str)
+                        && dependency_snapshots_are_current(
+                            &prepared.dependency_snapshots,
+                            &self.docs,
+                        )
+                }
+            },
+        )?;
 
         let imported_uris = {
-            let mut state = state_arc.write();
+            let mut state = state_arc.try_write_for(STATE_LOCK_TIMEOUT)?;
             state.ensure_analyzed(prepared.resolution)
         };
 
-        if !imported_uris.is_empty() {
-            self.doc_cache
-                .register_dependencies(&uri_str, &imported_uris);
+        if !dependency_snapshots_are_current(&prepared.dependency_snapshots, &self.docs) {
+            self.doc_cache.invalidate_if_state(&uri_str, &state_arc);
+            return None;
+        }
+
+        if let Some(imported_uris) = imported_uris
+            && !self.doc_cache.register_dependencies_for_state_when(
+                &uri_str,
+                &state_arc,
+                &imported_uris,
+                || dependency_snapshots_are_current(&prepared.dependency_snapshots, &self.docs),
+            )
+        {
+            return None;
         }
 
         Some(state_arc)
+    }
+
+    async fn get_analyzed_state(
+        &self,
+        uri: &tower_lsp::lsp_types::Url,
+        text: Arc<String>,
+    ) -> Option<Arc<RwLock<crate::state::DocumentState>>> {
+        let expected_generation = self.pending_versions.read().get(uri.as_ref()).copied();
+        if let Some(state_arc) = self.doc_cache.get(uri.as_ref()) {
+            let cached_text_matches = self
+                .doc_cache
+                .get_text(uri.as_ref())
+                .is_some_and(|cached| Arc::ptr_eq(&cached, &text) || *cached == *text);
+            if !cached_text_matches {
+                // Continue into bounded analysis and replace the stale entry.
+            } else {
+                match state_arc.try_read() {
+                    Some(state) if state.compiler.is_some() && *state.text == *text => {
+                        drop(state);
+                        return Some(Arc::clone(&state_arc));
+                    }
+                    // A background analysis already owns the state. Let the handler's
+                    // bounded read decide whether it completes within the request budget.
+                    None => return Some(Arc::clone(&state_arc)),
+                    Some(_) => {}
+                }
+            }
+        }
+
+        let permit = tokio::time::timeout(
+            STATE_LOCK_TIMEOUT,
+            Arc::clone(&self.analysis_slots).acquire_owned(),
+        )
+        .await
+        .ok()?
+        .ok()?;
+        let backend = self.clone();
+        let uri = uri.clone();
+        let task = tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            backend.get_analyzed_state_blocking(&uri, text, expected_generation)
+        });
+        tokio::time::timeout(STATE_LOCK_TIMEOUT, task)
+            .await
+            .ok()?
+            .ok()?
     }
 
     /// Looks up the current source text for `uri` from the `docs` map.
@@ -312,17 +387,20 @@ impl Backend {
     }
 
     /// Convenience: retrieves the document text and runs [`get_analyzed_state`](Self::get_analyzed_state).
-    fn get_state(&self, uri: &tower_lsp::lsp_types::Url) -> Option<Arc<RwLock<DocumentState>>> {
+    async fn get_state(
+        &self,
+        uri: &tower_lsp::lsp_types::Url,
+    ) -> Option<Arc<RwLock<DocumentState>>> {
         let text = self.get_document_text(uri.as_ref())?;
-        self.get_analyzed_state(uri, text)
+        self.get_analyzed_state(uri, text).await
     }
 
     /// Atomically increments the version counter for `uri`, returning the new value.
     fn bump_version(&self, uri: &str) -> u64 {
+        let next = self.next_version.fetch_add(1, Ordering::Relaxed);
         let mut vers = self.pending_versions.write();
-        let v = vers.entry(uri.to_string()).or_insert(0);
-        *v = v.wrapping_add(1);
-        *v
+        vers.insert(uri.to_string(), next);
+        next
     }
 
     /// Applies LSP content changes to a document, updating the docs map.
@@ -368,7 +446,7 @@ impl Backend {
         if let Ok(def_uri) = tower_lsp::lsp_types::Url::from_file_path(def_path)
             && let Ok(text) = tokio::fs::read_to_string(def_path).await
         {
-            self.get_analyzed_state(&def_uri, Arc::new(text));
+            self.get_analyzed_state(&def_uri, Arc::new(text)).await;
         }
     }
 
@@ -385,7 +463,9 @@ impl Backend {
         pos: Position,
     ) {
         let def_path = {
-            let state = state_arc.read();
+            let Some(state) = state_arc.try_read_for(STATE_LOCK_TIMEOUT) else {
+                return;
+            };
             let byte_offset = crate::text::position_to_offset(&state.text, pos);
             if state.offset_in_comment(byte_offset) {
                 None
@@ -443,32 +523,27 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
         }
         SymbolKind::Namespace => match sym.associated_scope.expect("Should have namespace") {
             scopes_concepts::AssociatedScopeKind::Module(_) => CompletionItemKind::MODULE,
-            scopes_concepts::AssociatedScopeKind::Scope(scope_id) => {
-                if compiler.scopes[scope_id].scope.is_intrinsic {
-                    CompletionItemKind::CLASS
-                } else {
-                    CompletionItemKind::VARIABLE
-                }
-            }
+            scopes_concepts::AssociatedScopeKind::Scope(_) => CompletionItemKind::VARIABLE,
         },
         SymbolKind::Directive(_) => CompletionItemKind::KEYWORD,
         // Core exposes extern names as terminal type symbols even though it does
         // not yet attach a `TypeId` to them.
-        SymbolKind::ExternType => CompletionItemKind::CLASS,
+        SymbolKind::ExternType(_) => CompletionItemKind::CLASS,
     }
 }
 
-/// Collects the symbols reachable from `mod_id`'s scope tables, including the core
-/// scope injected into every user module.
+/// Collects symbols owned by `mod_id`'s qualified namespace.
 ///
-/// Iterating the scope tables instead of filtering the global symbol arena by
-/// `SymbolOrigin` mirrors real scope lookup: compiler-generated namespace members
-/// such as the `i8::MAX` instantiation variables live in builtin-type namespace
-/// scopes that no module table contains, so they never leak into module completions.
+/// Core's scope is injected into user modules for unqualified lexical lookup. A
+/// qualified lookup uses `NamespaceOnly` and excludes it, so completion must do
+/// the same or `main::i8` is advertised even though the compiler rejects it.
 fn reachable_module_symbols(compiler: &ScriptCompiler, mod_id: ModuleId) -> Vec<SymbolId> {
     let mut symbols = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for scope_id in &compiler.mods[mod_id].scopes {
+        if compiler.scopes[*scope_id].scope.scope_type == scopes_concepts::ScopeType::Core {
+            continue;
+        }
         for (_, sym_id) in compiler.scopes[*scope_id].scope.table.iter_interned() {
             if seen.insert(sym_id) {
                 symbols.push(sym_id);
@@ -487,13 +562,20 @@ fn namespace_scope_of_visible_symbol(
     compiler: &ScriptCompiler,
     name_id: InternedId,
 ) -> Option<ScopeId> {
-    for sym_id in reachable_module_symbols(compiler, ModuleId::new(0)) {
-        let Some(sym) = compiler.syms.get(sym_id) else {
-            continue;
-        };
-        if sym.name_id != name_id {
-            continue;
-        }
+    for scope_type in [
+        scopes_concepts::ScopeType::Var,
+        scopes_concepts::ScopeType::Neutral,
+    ] {
+        let sym_id = scopes::find_sym_id(
+            compiler,
+            scopes_concepts::AssociatedScopeKind::Module(ModuleId::new(0)),
+            name_id,
+            scope_type,
+            scopes_concepts::ScopeLookupPattern::NoRestrictions,
+            scopes_concepts::ScopeLookupPreferenceFlags::none(),
+        )?
+        .found_sym_id;
+        let sym = &compiler.syms[sym_id];
         if let Some(scopes_concepts::AssociatedScopeKind::Scope(scope_id)) = sym.associated_scope {
             return Some(scope_id);
         }
@@ -523,14 +605,154 @@ fn namespace_scope_of_intrinsic_symbol(
     })
 }
 
+#[derive(Clone, Copy)]
+enum CompletionNamespace {
+    Module(ModuleId),
+    Scope(ScopeId),
+}
+
+fn completion_namespace_for_symbol(sym: &Symbol) -> Option<CompletionNamespace> {
+    match sym.associated_scope? {
+        scopes_concepts::AssociatedScopeKind::Module(mod_id) => {
+            Some(CompletionNamespace::Module(mod_id))
+        }
+        scopes_concepts::AssociatedScopeKind::Scope(scope_id) => {
+            Some(CompletionNamespace::Scope(scope_id))
+        }
+    }
+}
+
+/// Extracts every namespace segment before the completion prefix from lexer
+/// tokens. Walking tokens keeps comments and whitespace out of the path while
+/// retaining the full `a::b::` chain instead of only the nearest identifier.
+fn static_access_target_path(state: &DocumentState, prefix_start: usize) -> Vec<InternedId> {
+    let relative_start = prefix_start.saturating_sub(state.script_start) as u32;
+    let mut index = state
+        .tokens
+        .partition_point(|token| token.span.end <= relative_start);
+    let mut reversed = Vec::new();
+
+    loop {
+        let Some(access) = index.checked_sub(1).and_then(|i| state.tokens.get(i)) else {
+            break;
+        };
+        if !matches!(access.tok, ScriptToken::StaticAccess) {
+            break;
+        }
+        index -= 1;
+
+        let Some(segment) = index.checked_sub(1).and_then(|i| state.tokens.get(i)) else {
+            break;
+        };
+        let ScriptToken::Id(name_id) = segment.tok else {
+            break;
+        };
+        reversed.push(name_id);
+        index -= 1;
+    }
+
+    reversed.reverse();
+    reversed
+}
+
+fn module_symbol_for_completion(
+    compiler: &ScriptCompiler,
+    mod_id: ModuleId,
+    name_id: InternedId,
+) -> Option<SymbolId> {
+    if mod_id == ModuleId::new(0) {
+        return [
+            scopes_concepts::ScopeType::Var,
+            scopes_concepts::ScopeType::Neutral,
+        ]
+        .into_iter()
+        .find_map(|scope_type| {
+            scopes::find_sym_id(
+                compiler,
+                scopes_concepts::AssociatedScopeKind::Module(mod_id),
+                name_id,
+                scope_type,
+                scopes_concepts::ScopeLookupPattern::NamespaceOnly,
+                scopes_concepts::ScopeLookupPreferenceFlags::none(),
+            )
+            .map(|found| found.found_sym_id)
+        });
+    }
+
+    compiler.mods[mod_id]
+        .exports
+        .iter()
+        .copied()
+        .find(|sym_id| compiler.syms[*sym_id].name_id == name_id)
+}
+
+fn resolve_completion_namespace_path(
+    compiler: &ScriptCompiler,
+    path: &[InternedId],
+    allow_intrinsic_root: bool,
+) -> Option<CompletionNamespace> {
+    let (&head, tail) = path.split_first()?;
+    let mut cursor = if let Some(mod_id) = crate::state::visible_module(compiler, head) {
+        CompletionNamespace::Module(mod_id)
+    } else if let Some(scope_id) = namespace_scope_of_visible_symbol(compiler, head).or_else(|| {
+        allow_intrinsic_root
+            .then(|| namespace_scope_of_intrinsic_symbol(compiler, head))
+            .flatten()
+    }) {
+        CompletionNamespace::Scope(scope_id)
+    } else {
+        return None;
+    };
+
+    for &name_id in tail {
+        let sym_id = match cursor {
+            CompletionNamespace::Module(mod_id) => {
+                module_symbol_for_completion(compiler, mod_id, name_id)?
+            }
+            CompletionNamespace::Scope(scope_id) => scopes::find_sym_id(
+                compiler,
+                scopes_concepts::AssociatedScopeKind::Scope(scope_id),
+                name_id,
+                scopes_concepts::ScopeType::Complex,
+                scopes_concepts::ScopeLookupPattern::NamespaceOnly,
+                scopes_concepts::ScopeLookupPreferenceFlags::none(),
+            )
+            .map(|found| found.found_sym_id)?,
+        };
+        cursor = completion_namespace_for_symbol(&compiler.syms[sym_id])?;
+    }
+
+    Some(cursor)
+}
+
 pub(crate) struct ConfigCompletionCandidate {
     pub(crate) open: u32,
     pub(crate) close: u32,
     pub(crate) name_start: u32,
     pub(crate) type_id: Option<TypeId>,
+    pub(crate) scope_id: Option<ScopeId>,
     pub(crate) is_root: bool,
     pub(crate) configured_options: Vec<InternedId>,
     pub(crate) configured_members: Vec<InternedId>,
+}
+
+fn config_namespace_scope_id(
+    state: &DocumentState,
+    compiler: &ScriptCompiler,
+    name_span: SourceSpan,
+) -> Option<ScopeId> {
+    state.symbol_map.iter().find_map(|(span, entity)| {
+        let SemanticEntity::Symbol(sym_id) = entity else {
+            return None;
+        };
+        let sym = &compiler.syms[*sym_id];
+        (*span == name_span && matches!(sym.kind, SymbolKind::Namespace))
+            .then(|| match sym.associated_scope {
+                Some(scopes_concepts::AssociatedScopeKind::Scope(scope_id)) => Some(scope_id),
+                _ => None,
+            })
+            .flatten()
+    })
 }
 
 /// Map config delimiters to their closing brace. Shorthand arrows share their
@@ -697,6 +919,7 @@ fn config_candidate_for_member(
             close,
             name_start: member.common.name_span.start,
             type_id: config_member_type_id(member),
+            scope_id: config_namespace_scope_id(state, compiler, member.common.name_span),
             is_root: false,
             configured_options: configured_option_names(compiler, &member.ast_stmts),
             configured_members,
@@ -812,15 +1035,9 @@ fn config_completion_candidate(
         let Some(ast_id) = impl_hir.ast_id else {
             continue;
         };
-        // Only `complex` roots offer struct/enum member completion. `override`
-        // roots configure intrinsic namespaces, which share the `Complex`
-        // scope but carry `Override` metadata in the AST.
         let AbstractConfigKind::Root(_, root_meta) = &ast.get_cfg_root(ast_id).kind else {
             continue;
         };
-        if !matches!(root_meta, ConfigRootMetadataKind::Complex) {
-            continue;
-        }
         let Some(root_name_span) = cfg_kind_name_span(&ast.get_cfg_root(ast_id).kind) else {
             continue;
         };
@@ -832,7 +1049,21 @@ fn config_completion_candidate(
             open,
             close,
             name_start: root_name_span.start,
-            type_id: config_root_type_id(compiler, cfg_root),
+            type_id: matches!(root_meta, ConfigRootMetadataKind::Complex)
+                .then(|| config_root_type_id(compiler, cfg_root))
+                .flatten(),
+            scope_id: matches!(root_meta, ConfigRootMetadataKind::Override)
+                .then(|| {
+                    cfg_root.linked_sym_id.and_then(|sym_id| {
+                        match compiler.syms[sym_id].associated_scope {
+                            Some(scopes_concepts::AssociatedScopeKind::Scope(scope_id)) => {
+                                Some(scope_id)
+                            }
+                            _ => None,
+                        }
+                    })
+                })
+                .flatten(),
             is_root: true,
             configured_options: configured_option_names(compiler, &cfg_root.stmts),
             configured_members: cfg_root
@@ -860,12 +1091,116 @@ fn config_completion_candidate(
         .max_by_key(|candidate| (candidate.open, candidate.name_start))
 }
 
+fn completion_follows_override(state: &DocumentState, prefix_start: usize) -> bool {
+    let relative_start = prefix_start.saturating_sub(state.script_start) as u32;
+    let before_prefix = state
+        .tokens
+        .partition_point(|token| token.span.end <= relative_start);
+    let previous = state.tokens[..before_prefix]
+        .iter()
+        .rfind(|token| !matches!(token.tok, ScriptToken::EOF));
+
+    previous.is_some_and(|token| {
+        matches!(
+            token.tok,
+            ScriptToken::Keyword(lang::keywords::Keyword::Override)
+        )
+    })
+}
+
+/// Resolve the namespace immediately preceding an override shorthand arrow.
+///
+/// Use tokens instead of resolved config HIR because an invalid child after the
+/// cursor can prevent core from retaining that config member. The namespace
+/// transition at `override JAVA=>` is still unambiguous in the source.
+fn override_arrow_namespace_scope(
+    state: &DocumentState,
+    compiler: &ScriptCompiler,
+    prefix_start: usize,
+) -> Option<ScopeId> {
+    let relative_start = prefix_start.saturating_sub(state.script_start) as u32;
+    let before_prefix = state
+        .tokens
+        .partition_point(|token| token.span.end <= relative_start);
+    let tokens = state
+        .tokens
+        .get(before_prefix.checked_sub(3)?..before_prefix)?;
+
+    let [override_token, namespace_token, arrow_token] = tokens else {
+        return None;
+    };
+    if !matches!(
+        override_token.tok,
+        ScriptToken::Keyword(lang::keywords::Keyword::Override)
+    ) || !matches!(arrow_token.tok, ScriptToken::NotSlimArrow)
+    {
+        return None;
+    }
+    let ScriptToken::Id(namespace_name_id) = namespace_token.tok else {
+        return None;
+    };
+
+    namespace_scope_of_intrinsic_symbol(compiler, namespace_name_id)
+}
+
+fn override_root_completion_items(
+    state: &DocumentState,
+    compiler: &ScriptCompiler,
+    prefix: &str,
+) -> Vec<CompletionItem> {
+    let roots: Vec<_> = if let Some(scope_id) = compiler.intrinsic_registry.complex_scope_id {
+        compiler.scopes[scope_id]
+            .scope
+            .table
+            .iter_interned()
+            .map(|(_, sym_id)| compiler.syms[sym_id].name_id)
+            .collect()
+    } else {
+        // An unfinished `override ` has no resolved config root, so core has not
+        // materialized its intrinsic scope yet. These names are stable interner
+        // preloads and are the roots core will install once the target parses.
+        vec![
+            InternedId::new(chrn_utils::intern::INTERNED_JAVA_UPPER),
+            InternedId::new(chrn_utils::intern::INTERNED_RUST_UPPER),
+        ]
+    };
+
+    roots
+        .into_iter()
+        .filter_map(|name_id| {
+            let name = state.interner.search(name_id);
+            (prefix.is_empty() || name.starts_with(prefix)).then(|| CompletionItem {
+                label: name.to_string(),
+                kind: Some(CompletionItemKind::VARIABLE),
+                ..Default::default()
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn config_completion_items(
     state: &DocumentState,
     compiler: &ScriptCompiler,
     candidate: ConfigCompletionCandidate,
     prefix: &str,
 ) -> Vec<CompletionItem> {
+    if let Some(scope_id) = candidate.scope_id {
+        return compiler.scopes[scope_id]
+            .scope
+            .table
+            .iter_interned()
+            .filter_map(|(_, sym_id)| {
+                let sym = &compiler.syms[sym_id];
+                let name = state.interner.search(sym.name_id);
+                (prefix.is_empty() || name.starts_with(prefix)).then(|| CompletionItem {
+                    label: name.to_string(),
+                    kind: Some(symbol_completion_kind(compiler, sym)),
+                    ..Default::default()
+                })
+            })
+            .collect();
+    }
+
     let (members, root_schema_kind) = match candidate.type_id {
         Some(type_id) => match config_type_info(compiler, type_id) {
             Some(info) => info,
@@ -979,53 +1314,56 @@ fn classify_id_token(
     if let Some(entity) = entity {
         match entity {
             SemanticEntity::Symbol(sym_id) => {
-                // `entity: &SemanticEntity` so `sym_id: &SymbolId` — dereference
-                // before passing to `Arena::get`, which takes the id by value.
-                if let Some(sym) = compiler.syms.get(*sym_id) {
-                    match sym.kind {
-                        SymbolKind::Type(tid) => {
-                            let ty = &compiler.types[tid].ty;
-                            match ty {
-                                Type::BuiltinTypeInfo(_)
-                                | Type::TypeDef(_)
-                                | Type::Struct(_)
-                                | Type::Enum(_) => {
-                                    return Some(SemanticTokenType::Type.as_u32());
-                                }
-                                Type::Alias(_) => {
-                                    return Some(SemanticTokenType::Function.as_u32());
-                                }
-                                Type::Func(func_def) if func_def.is_callable => {
-                                    return Some(SemanticTokenType::Function.as_u32());
-                                }
-                                Type::Func(_) => {
-                                    return Some(SemanticTokenType::String.as_u32());
-                                }
-                                Type::Unknown | Type::Boundaries(_) | Type::Deferred(_) => {
-                                    return Some(SemanticTokenType::Type.as_u32());
-                                }
+                let sym = &compiler.syms[*sym_id];
+                match sym.kind {
+                    SymbolKind::Type(tid) => {
+                        let ty = &compiler.types[tid].ty;
+                        match ty {
+                            Type::BuiltinTypeInfo(_)
+                            | Type::TypeDef(_)
+                            | Type::Struct(_)
+                            | Type::Enum(_) => {
+                                return Some(SemanticTokenType::Type.as_u32());
                             }
-                        }
-                        SymbolKind::Variable(_) => {
-                            if next_is_paren {
+                            Type::Alias(_) => {
                                 return Some(SemanticTokenType::Function.as_u32());
                             }
-                            return Some(SemanticTokenType::Variable.as_u32());
-                        }
-                        SymbolKind::Namespace => match sym.associated_scope {
-                            Some(scopes_concepts::AssociatedScopeKind::Scope(scope_id))
-                                if compiler.scopes[scope_id].scope.is_intrinsic =>
-                            {
-                                return Some(SemanticTokenType::Class.as_u32());
+                            Type::Func(func_def) if func_def.is_callable => {
+                                return Some(SemanticTokenType::Function.as_u32());
                             }
-                            _ => return Some(SemanticTokenType::Variable.as_u32()),
-                        },
-                        SymbolKind::Directive(_) => {
-                            return Some(SemanticTokenType::Regexp.as_u32());
+                            Type::Func(_) => {
+                                return Some(SemanticTokenType::String.as_u32());
+                            }
+                            Type::Unknown | Type::Boundaries(_) | Type::Deferred(_) => {
+                                return Some(SemanticTokenType::Type.as_u32());
+                            }
                         }
-                        SymbolKind::ExternType => {
-                            return Some(SemanticTokenType::Type.as_u32());
+                    }
+                    SymbolKind::Variable(_) => {
+                        if next_is_paren {
+                            return Some(SemanticTokenType::Function.as_u32());
                         }
+                        return Some(SemanticTokenType::Variable.as_u32());
+                    }
+                    SymbolKind::Namespace => match sym.associated_scope {
+                        Some(scopes_concepts::AssociatedScopeKind::Module(_)) => {
+                            return Some(SemanticTokenType::Keyword.as_u32());
+                        }
+                        Some(scopes_concepts::AssociatedScopeKind::Scope(scope_id)) => {
+                            let token_type = if compiler.scopes[scope_id].scope.is_intrinsic {
+                                SemanticTokenType::Class
+                            } else {
+                                SemanticTokenType::Variable
+                            };
+                            return Some(token_type.as_u32());
+                        }
+                        None => return None,
+                    },
+                    SymbolKind::Directive(_) => {
+                        return Some(SemanticTokenType::Regexp.as_u32());
+                    }
+                    SymbolKind::ExternType(_) => {
+                        return Some(SemanticTokenType::Type.as_u32());
                     }
                 }
             }
@@ -1137,7 +1475,13 @@ impl LanguageServer for Backend {
         let client = self.client.clone();
         let dc = self.diags_cache.clone();
         let doc_cache = self.doc_cache.clone();
-        tokio::spawn(async move {
+        let open_docs = Arc::clone(&self.docs);
+        let analysis_slots = Arc::clone(&self.analysis_slots);
+        if let Some(previous) = self.pending_tasks.write().remove(&uri_str) {
+            previous.abort();
+        }
+        self.doc_cache.invalidate(&uri_str);
+        let handle = tokio::spawn(async move {
             analyze_and_publish_task(
                 client,
                 params.text_document.uri,
@@ -1145,10 +1489,13 @@ impl LanguageServer for Backend {
                 dc,
                 doc_cache,
                 pending_versions,
+                open_docs,
+                analysis_slots,
                 version,
             )
             .await
         });
+        self.pending_tasks.write().insert(uri_str, handle);
     }
 
     async fn did_save(&self, params: tower_lsp::lsp_types::DidSaveTextDocumentParams) {
@@ -1170,12 +1517,15 @@ impl LanguageServer for Backend {
         let client = self.client.clone();
         let dc = self.diags_cache.clone();
         let doc_cache = self.doc_cache.clone();
+        let open_docs = Arc::clone(&self.docs);
+        let analysis_slots = Arc::clone(&self.analysis_slots);
 
         if let Some(handle) = self.pending_tasks.write().remove(&uri_str) {
             handle.abort();
         }
 
-        tokio::spawn(async move {
+        self.doc_cache.invalidate(&uri_str);
+        let handle = tokio::spawn(async move {
             analyze_and_publish_task(
                 client,
                 params.text_document.uri,
@@ -1183,21 +1533,24 @@ impl LanguageServer for Backend {
                 dc,
                 doc_cache,
                 pending_versions,
+                open_docs,
+                analysis_slots,
                 version,
             )
             .await
         });
+        self.pending_tasks.write().insert(uri_str, handle);
     }
 
     async fn did_close(&self, params: tower_lsp::lsp_types::DidCloseTextDocumentParams) {
         // Remove the document on close to free memory and avoid stale state
         let uri = params.text_document.uri.to_string();
         self.docs.write().remove(&uri);
-        // remove any pending debounce/version info for this doc
+        // Remove the current generation so every surviving task becomes stale.
         self.pending_versions.write().remove(&uri);
         // remove cached diagnostics for this doc
         self.diags_cache.write().remove(&uri);
-        // abort and remove any pending debounce task for this document
+        // Abort and remove any pending analysis task for this document.
         if let Some(handle) = self.pending_tasks.write().remove(&uri) {
             handle.abort();
         }
@@ -1220,23 +1573,23 @@ impl LanguageServer for Backend {
             return;
         };
 
-        self.doc_cache.invalidate(&uri_str);
-
         const DEBOUNCE_MS: u64 = 150;
 
         let my_version = self.bump_version(&uri_str);
+        self.doc_cache.invalidate(&uri_str);
 
         let client = self.client.clone();
         let pv = self.pending_versions.clone();
         let dc = self.diags_cache.clone();
+        let analysis_slots = Arc::clone(&self.analysis_slots);
 
         if let Some(prev) = self.pending_tasks.write().remove(&uri_str) {
             prev.abort();
         }
 
-        let pending_tasks_weak = Arc::downgrade(&self.pending_tasks);
         let inner_uri_str = uri_str.clone();
         let doc_cache = self.doc_cache.clone();
+        let open_docs = Arc::clone(&self.docs);
         let handle = tokio::spawn(async move {
             sleep(Duration::from_millis(DEBOUNCE_MS)).await;
 
@@ -1253,13 +1606,11 @@ impl LanguageServer for Backend {
                     dc,
                     doc_cache,
                     pv,
+                    open_docs,
+                    analysis_slots,
                     my_version,
                 )
                 .await;
-            }
-
-            if let Some(pending_tasks_arc) = pending_tasks_weak.upgrade() {
-                _ = pending_tasks_arc.write().remove(&inner_uri_str);
             }
         });
 
@@ -1275,10 +1626,10 @@ impl LanguageServer for Backend {
         let Some(text) = self.get_document_text(uri.as_ref()) else {
             return Ok(None);
         };
-        let Some(state_arc) = self.get_analyzed_state(&uri, text) else {
+        let Some(state_arc) = self.get_analyzed_state(&uri, text).await else {
             return Ok(None);
         };
-        let state = match state_arc.try_read_for(Duration::from_millis(500)) {
+        let state = match state_arc.try_read_for(STATE_LOCK_TIMEOUT) {
             Some(guard) => guard,
             None => return Ok(None),
         };
@@ -1296,7 +1647,7 @@ impl LanguageServer for Backend {
         let Some(text) = self.get_document_text(uri.as_ref()) else {
             return Ok(None);
         };
-        let Some(state_arc) = self.get_analyzed_state(&uri, text) else {
+        let Some(state_arc) = self.get_analyzed_state(&uri, text).await else {
             return Ok(None);
         };
 
@@ -1316,7 +1667,7 @@ impl LanguageServer for Backend {
         let Some(text) = self.get_document_text(uri.as_ref()) else {
             return Ok(None);
         };
-        let Some(state_arc) = self.get_analyzed_state(&uri, text) else {
+        let Some(state_arc) = self.get_analyzed_state(&uri, text).await else {
             return Ok(None);
         };
 
@@ -1334,11 +1685,13 @@ impl LanguageServer for Backend {
         let Some(text) = self.get_document_text(uri.as_ref()) else {
             return Ok(None);
         };
-        let Some(state_arc) = self.get_analyzed_state(&uri, text) else {
+        let Some(state_arc) = self.get_analyzed_state(&uri, text).await else {
             return Ok(None);
         };
 
-        let state = state_arc.read();
+        let Some(state) = state_arc.try_read_for(STATE_LOCK_TIMEOUT) else {
+            return Ok(None);
+        };
         let compiler = match &state.compiler {
             Some(c) => c,
             None => return Ok(None),
@@ -1488,7 +1841,7 @@ impl LanguageServer for Backend {
         let Some(text) = self.get_document_text(uri.as_ref()) else {
             return Ok(None);
         };
-        let Some(state_arc) = self.get_analyzed_state(&uri, text) else {
+        let Some(state_arc) = self.get_analyzed_state(&uri, text).await else {
             return Ok(None);
         };
 
@@ -1497,18 +1850,16 @@ impl LanguageServer for Backend {
         // is relative to the target region's `src_bytes`) into an absolute
         // file byte offset usable as an LSP `Position`.
         let def_target = {
-            let state = state_arc.read();
+            let Some(state) = state_arc.try_read_for(STATE_LOCK_TIMEOUT) else {
+                return Ok(None);
+            };
             let byte_offset = crate::text::position_to_offset(&state.text, pos);
             if state.offset_in_comment(byte_offset) {
                 None
             } else {
                 state.get_entity_at_offset(byte_offset).and_then(|entity| {
                     let (def_path, def_span, _) = state.get_definition_location(entity)?;
-                    let def_script_start = state
-                        .region_arena
-                        .get(def_span.region_id)
-                        .map(|r| r.script_start)
-                        .unwrap_or(0);
+                    let def_script_start = state.region_arena[def_span.region_id].script_start;
                     Some((def_path, def_span, def_script_start))
                 })
             }
@@ -1522,7 +1873,9 @@ impl LanguageServer for Backend {
 
         // The target file's text is needed to turn the span into a position.
         let target_text = if def_path == uri.path() {
-            Some(Arc::clone(&state_arc.read().text))
+            state_arc
+                .try_read_for(STATE_LOCK_TIMEOUT)
+                .map(|state| Arc::clone(&state.text))
         } else {
             let target_uri_str = target_uri.to_string();
             match self
@@ -1568,11 +1921,11 @@ impl LanguageServer for Backend {
         params: tower_lsp::lsp_types::CompletionParams,
     ) -> jsonrpc::Result<Option<tower_lsp::lsp_types::CompletionResponse>> {
         let uri = &params.text_document_position.text_document.uri;
-        let Some(state_arc) = self.get_state(uri) else {
+        let Some(state_arc) = self.get_state(uri).await else {
             return Ok(None);
         };
 
-        let state_guard = match state_arc.try_read_for(Duration::from_millis(500)) {
+        let state_guard = match state_arc.try_read_for(STATE_LOCK_TIMEOUT) {
             Some(g) => g,
             None => return Ok(None),
         };
@@ -1636,15 +1989,56 @@ impl LanguageServer for Backend {
         let is_static_access_completion = start_b >= 2
             && state.text.as_bytes()[start_b - 1] == b':'
             && state.text.as_bytes()[start_b - 2] == b':';
-        let mut static_target_name = None;
         if is_static_access_completion {
-            let (t_start, t_end) = crate::text::find_word_bounds(&state.text, start_b - 2);
-            if t_start < t_end {
-                static_target_name = Some(&state.text[t_start..t_end]);
+            let mut items = Vec::new();
+            if let Some(compiler) = &state.compiler {
+                let path = static_access_target_path(state, start_b);
+                let allow_intrinsic_root = cursor_in_override_config(state, compiler, byte_off);
+                if let Some(namespace) =
+                    resolve_completion_namespace_path(compiler, &path, allow_intrinsic_root)
+                {
+                    let mut push_symbol = |sym_id: SymbolId| {
+                        let sym = &compiler.syms[sym_id];
+                        let name = state.interner.search(sym.name_id);
+                        if prefix.is_empty() || name.starts_with(prefix) {
+                            items.push(CompletionItem {
+                                label: name.to_string(),
+                                kind: Some(symbol_completion_kind(compiler, sym)),
+                                ..Default::default()
+                            });
+                        }
+                    };
+
+                    match namespace {
+                        CompletionNamespace::Module(mod_id) if mod_id == ModuleId::new(0) => {
+                            for sym_id in reachable_module_symbols(compiler, mod_id) {
+                                let sym = &compiler.syms[sym_id];
+                                if sym.scope_origin == scopes_concepts::ScopeType::Var
+                                    || matches!(sym.kind, SymbolKind::Directive(_))
+                                {
+                                    continue;
+                                }
+                                push_symbol(sym_id);
+                            }
+                        }
+                        CompletionNamespace::Module(mod_id) => {
+                            for &sym_id in &compiler.mods[mod_id].exports {
+                                push_symbol(sym_id);
+                            }
+                        }
+                        CompletionNamespace::Scope(scope_id) => {
+                            for (_, sym_id) in compiler.scopes[scope_id].scope.table.iter_interned()
+                            {
+                                push_symbol(sym_id);
+                            }
+                        }
+                    }
+                }
             }
+            return Ok(Some(CompletionResponse::Array(items)));
         }
 
-        let target_name = dot_target_name.or(static_target_name);
+        let target_name = dot_target_name;
 
         if let Some(target_name) = target_name {
             let mut items: Vec<CompletionItem> = Vec::new();
@@ -1659,9 +2053,7 @@ impl LanguageServer for Backend {
                         // so compiler-internal namespace members such as `i8::MAX` (which live
                         // in builtin-type namespace scopes) are never offered here.
                         for sym_id in reachable_module_symbols(compiler, module.mod_id) {
-                            let Some(sym) = compiler.syms.get(sym_id) else {
-                                continue;
-                            };
+                            let sym = &compiler.syms[sym_id];
                             if sym.scope_origin == scopes_concepts::ScopeType::Var
                                 || matches!(sym.kind, SymbolKind::Directive(_))
                             {
@@ -1680,18 +2072,15 @@ impl LanguageServer for Backend {
                     } else {
                         // Other modules: show only exported symbols
                         for sym_id in &module.exports {
-                            // `sym_id: &SymbolId` (from iterating over `Vec<SymbolId>`),
-                            // dereference before calling `Arena::get`.
-                            if let Some(sym) = compiler.syms.get(*sym_id) {
-                                let sym_name = state.interner.search(sym.name_id);
-                                if prefix.is_empty() || sym_name.starts_with(prefix) {
-                                    let kind = symbol_completion_kind(compiler, sym);
-                                    items.push(CompletionItem {
-                                        label: sym_name.to_string(),
-                                        kind: Some(kind),
-                                        ..Default::default()
-                                    });
-                                }
+                            let sym = &compiler.syms[*sym_id];
+                            let sym_name = state.interner.search(sym.name_id);
+                            if prefix.is_empty() || sym_name.starts_with(prefix) {
+                                let kind = symbol_completion_kind(compiler, sym);
+                                items.push(CompletionItem {
+                                    label: sym_name.to_string(),
+                                    kind: Some(kind),
+                                    ..Default::default()
+                                });
                             }
                         }
                     }
@@ -1707,9 +2096,7 @@ impl LanguageServer for Backend {
                     // associated scope rather than in a module export list.
                     let ns_scope = &compiler.scopes[scope_id];
                     for (_, member_id) in ns_scope.scope.table.iter_interned() {
-                        let Some(member) = compiler.syms.get(member_id) else {
-                            continue;
-                        };
+                        let member = &compiler.syms[member_id];
                         let member_name = state.interner.search(member.name_id);
                         if prefix.is_empty() || member_name.starts_with(prefix) {
                             let kind = symbol_completion_kind(compiler, member);
@@ -1722,6 +2109,38 @@ impl LanguageServer for Backend {
                     }
                 }
             }
+            return Ok(Some(CompletionResponse::Array(items)));
+        }
+
+        // `override` selects a compiler-provided platform namespace. Handle this
+        // before the enclosing config candidate can offer schema members/options.
+        if let Some(compiler) = &state.compiler
+            && completion_follows_override(state, start_b)
+        {
+            let items = override_root_completion_items(state, compiler, prefix);
+            return Ok(Some(CompletionResponse::Array(items)));
+        }
+
+        // `override JAVA=>` is a direct namespace transition. Resolve it from
+        // tokens so invalid text after the cursor cannot make completion fall
+        // back to the enclosing complex config member.
+        if let Some(compiler) = &state.compiler
+            && let Some(scope_id) = override_arrow_namespace_scope(state, compiler, start_b)
+        {
+            let items = compiler.scopes[scope_id]
+                .scope
+                .table
+                .iter_interned()
+                .filter_map(|(_, sym_id)| {
+                    let sym = &compiler.syms[sym_id];
+                    let name = state.interner.search(sym.name_id);
+                    (prefix.is_empty() || name.starts_with(prefix)).then(|| CompletionItem {
+                        label: name.to_string(),
+                        kind: Some(symbol_completion_kind(compiler, sym)),
+                        ..Default::default()
+                    })
+                })
+                .collect();
             return Ok(Some(CompletionResponse::Array(items)));
         }
 
@@ -1781,20 +2200,13 @@ impl LanguageServer for Backend {
         if let Some(compiler) = &state.compiler {
             //TODO: Should auto-complete any module that has a src of "None"
             // Core library exports: types, functions, and constants.
-            if let Some(core_mod) = compiler
-                .mods
-                // `core_mod_id` is already a `ModuleId` — pass it directly.
-                .get(compiler.intrinsic_registry.core_mod_id)
-            {
-                for sym_id in &core_mod.exports {
-                    // `sym_id: &SymbolId` — dereference for the typed `Arena::get` call.
-                    if let Some(sym) = compiler.syms.get(*sym_id) {
-                        push_item(
-                            state.interner.search(sym.name_id).to_string(),
-                            symbol_completion_kind(compiler, sym),
-                        );
-                    }
-                }
+            let core_mod = &compiler.mods[compiler.intrinsic_registry.core_mod_id];
+            for sym_id in &core_mod.exports {
+                let sym = &compiler.syms[*sym_id];
+                push_item(
+                    state.interner.search(sym.name_id).to_string(),
+                    symbol_completion_kind(compiler, sym),
+                );
             }
 
             // Compiler-origin directives (`#warn`, `#ignore`, `#scient`, …), read from

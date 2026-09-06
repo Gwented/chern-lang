@@ -864,16 +864,14 @@ fn parse_cfg_expr(
             // for "cases = expr/[exprs]"
             let opt = parse_option_assignment(ctx, budget, interner)?;
             stmts.push(AstStmt::OptAssignment(opt));
-            // Should this just be earlier? It's own separate earlier if?
-        } else if ctx.peek_kind() == TokenKind::Id
-            || matches!(
-                // "var/nest/override {ident} {}" can be used so we need to catch those semantic identifiers
-                ctx.peek_tok(),
-                Token::Keyword(Keyword::Var)
-                    | Token::Keyword(Keyword::Nest)
-                    | Token::Keyword(Keyword::Override)
-            )
-        {
+        } else if matches!(
+            // "var/nest/override {ident} {}" can be used so we need to catch those semantic identifiers
+            ctx.peek_tok(),
+            Token::Id(_)
+                | Token::Keyword(Keyword::Var)
+                | Token::Keyword(Keyword::Nest)
+                | Token::Keyword(Keyword::Override)
+        ) {
             // for "inner {/*assignments*/}"
             match parse_cfg_expr(ctx, budget, current_root_meta_opt, false, interner) {
                 Ok(abs_cfg) => cfg_members.push(abs_cfg),

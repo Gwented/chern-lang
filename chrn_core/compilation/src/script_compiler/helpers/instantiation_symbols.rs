@@ -1,5 +1,8 @@
 use chrn_utils::id_types::{AstId, InternedId, SymbolId};
-use lang::{types::builtins::BuiltinType, values::Value};
+use lang::{
+    types::{builtins::BuiltinType, externs::ExternPlatformType},
+    values::Value,
+};
 
 use crate::{
     lookup::scopes::scopes_concepts::{AssociatedScopeKind, ScopeType},
@@ -59,7 +62,7 @@ impl InstantiationSymbolBase {
 pub enum InstantiationSymbolKind {
     Namespace(&'static [InstantiationSymbolBase]),
     Variable(InstantiationVariable),
-    ExternType,
+    ExternType(ExternPlatformType),
 }
 
 #[derive(Debug)]

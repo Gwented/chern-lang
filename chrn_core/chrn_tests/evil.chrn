@@ -38,7 +38,9 @@ for varthing1 {}
 */
 // -- SECTION BASED --
 
-let abtest = 3
+// let abtest = 3
+// This is a bug, it can't resolve to core. Definitely other related namespace issues, sad face.
+let x = evil::core::i8
 
 var->
 varthing1: str
@@ -59,7 +61,19 @@ for Structure {
     field1 {
         // Assuming `self` is going to exist
         // NOTE: Namespaces don't recommend the symbols they contain, they should!
-        override JAVA=>types {change i32 = java::int}
+        //
+        // Why is override over-reaching?
+        override JAVA=>types{change i32 = java::int}
+        // Issues with `=>` usage here. It isn't correctly adjusting for the fact that since `=>` was used,
+        // it should skip looking for a closing Ccurly.
+        //
+        // So, override cfg just isn't closing.
+        override RUST=>types{}
+        // This should probably emit an error. Probably.
+        // override RUST=>types=>rust {}
+        //
+        // You can also assign non-built-ins which probably shouldn't be allowed. Probably.
+        // override RUST=>types {change varthing1 = rust::char}
     }
     field2 {
         override C=>types {self = f32}

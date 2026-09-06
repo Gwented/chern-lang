@@ -131,6 +131,26 @@ impl Session {
         self.change(uri, json!([{ "text": text }])).await;
     }
 
+    /// Sends a whole-document change without advancing the debounce timer.
+    pub async fn change_full_without_settle(&mut self, uri: &Url, text: &str) {
+        let version = {
+            let version = self
+                .doc_versions
+                .entry(uri.to_string())
+                .and_modify(|v| *v += 1)
+                .or_insert(2);
+            *version
+        };
+        self.notify(
+            "textDocument/didChange",
+            json!({
+                "textDocument": { "uri": uri, "version": version },
+                "contentChanges": [{ "text": text }],
+            }),
+        )
+        .await;
+    }
+
     /// Sends a ranged (incremental) `didChange`, exercising `apply_text_change`.
     pub async fn change_range(&mut self, uri: &Url, range: Range, text: &str) {
         self.change(uri, json!([{ "range": range, "text": text }]))

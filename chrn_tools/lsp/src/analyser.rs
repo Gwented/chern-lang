@@ -65,8 +65,7 @@ use chrn_utils::source_map::source_span::SourceSpan;
 use std::io::Cursor;
 use tower_lsp::lsp_types::Url;
 
-use crate::state::DocumentCache;
-use crate::state::DocumentState;
+use crate::state::{DocumentCache, DocumentState, STATE_LOCK_TIMEOUT};
 
 const MAX_DIAGS_CACHE_SIZE: usize = 100;
 
@@ -278,6 +277,24 @@ pub(crate) fn uri_to_path(uri: &Url) -> PathBuf {
 pub(crate) struct PreparedDocument {
     pub state: DocumentState,
     pub resolution: ModuleResolution,
+    pub dependency_snapshots: Vec<(String, Option<Arc<String>>)>,
+}
+
+pub(crate) fn dependency_snapshots_are_current(
+    snapshots: &[(String, Option<Arc<String>>)],
+    open_docs: &RwLock<HashMap<String, Arc<String>>>,
+) -> bool {
+    let docs = open_docs.read();
+    snapshots.iter().all(|(uri, observed)| {
+        let current = docs.get(uri);
+        match (observed, current) {
+            (Some(observed), Some(current)) => {
+                Arc::ptr_eq(observed, current) || **observed == **current
+            }
+            (None, None) => true,
+            _ => false,
+        }
+    })
 }
 
 /// Resolves all imported modules for `text` and builds a pre-analysis [`DocumentState`].
@@ -306,6 +323,7 @@ pub(crate) fn resolve_document_modules(
     main_state: ModuleState,
     chrn_cfg: &mut ChrnConfig,
     doc_cache: &DocumentCache,
+    open_docs: &RwLock<HashMap<String, Arc<String>>>,
     version: u64,
     mut interner: Intern,
 ) -> PreparedDocument {
@@ -368,6 +386,7 @@ pub(crate) fn resolve_document_modules(
     let mut sub_mods = Vec::with_capacity(main_mod.imports.len());
     let mut sub_regions: Vec<SourceRegion> = Vec::new();
     let mut sub_diags = Vec::new();
+    let mut dependency_snapshots = Vec::new();
 
     resolve_modules_lsp(
         &mut reserved_mod_ids,
@@ -378,6 +397,8 @@ pub(crate) fn resolve_document_modules(
         chrn_cfg,
         &mut interner,
         doc_cache,
+        open_docs,
+        &mut dependency_snapshots,
         &mut sub_diags,
         path_id,
     );
@@ -390,7 +411,7 @@ pub(crate) fn resolve_document_modules(
         .iter()
         .filter_map(|m| {
             let region_id = m.region_id?;
-            let region = sub_regions.get(region_id.id as usize - 1)?;
+            let region = &sub_regions[region_id.id as usize - 1];
             let p = interner.search_path(region.path_id);
             Url::from_file_path(p).ok().map(|u| u.to_string())
         })
@@ -408,6 +429,7 @@ pub(crate) fn resolve_document_modules(
 
     PreparedDocument {
         state,
+        dependency_snapshots,
         resolution: ModuleResolution {
             bind,
             main_region,
@@ -434,19 +456,22 @@ pub(crate) fn resolve_document_modules(
 ///   prevents redundant notifications.
 /// * `doc_cache`       — Shared analysis cache; provides tokenisation and semantic
 ///   analysis results.
-/// * `pending_versions`— Monotonic per-URI version counter used to discard stale results.
+/// * `pending_versions`— Current globally unique generation used to discard stale results.
+/// * `analysis_slots`  — Bounds blocking compiler work, including detached aborted jobs.
 /// * `version`         — The version token assigned to this particular analysis run.
 ///
 /// # Analysis steps
-/// 1. Runs `ChrnConfigLoader` to identify script boundaries.  If this fails, the
-///    config errors are published immediately and the task returns early.
-/// 2. Resolves imported modules and tokenises the document **outside** any
+/// 1. Acquires a bounded analysis slot and moves filesystem/compiler work to
+///    Tokio's blocking pool.
+/// 2. Runs `ChrnConfigLoader` to identify script boundaries. If this fails, the
+///    config errors are returned for generation-checked publication.
+/// 3. Resolves imported modules and tokenises the document **outside** any
 ///    `DocumentState` lock, using `DocumentCache` and disk as needed.
-/// 3. Inserts the prepared document into `DocumentCache`.
-/// 4. Calls `DocumentState::ensure_analyzed` to run parsing, name resolution,
+/// 4. Inserts the prepared document into `DocumentCache` if its generation is current.
+/// 5. Calls `DocumentState::ensure_analyzed` to run parsing, name resolution,
 ///    type-checking, and symbol-map construction.
-/// 5. Registers cross-module dependency edges in the cache.
-/// 6. Publishes diagnostics via `publish_if_current`, which checks that the version
+/// 6. Registers cross-module dependency edges only if the state is still current.
+/// 7. Publishes diagnostics via `publish_if_current`, which checks that the version
 ///    still matches before sending.
 pub async fn analyze_and_publish_task(
     client: Client,
@@ -455,8 +480,58 @@ pub async fn analyze_and_publish_task(
     diags_cache: Arc<RwLock<HashMap<String, u64>>>,
     doc_cache: Arc<DocumentCache>,
     pending_versions: Arc<RwLock<HashMap<String, u64>>>,
+    open_docs: Arc<RwLock<HashMap<String, Arc<String>>>>,
+    analysis_slots: Arc<tokio::sync::Semaphore>,
     version: u64,
 ) {
+    let Ok(permit) = analysis_slots.acquire_owned().await else {
+        return;
+    };
+    let publish_uri = uri.clone();
+    let publish_versions = Arc::clone(&pending_versions);
+    let analysis = tokio::task::spawn_blocking(move || {
+        // Keep the permit in the blocking job. Aborting the async owner detaches a
+        // running blocking task, so dropping it in the outer future would allow
+        // later jobs to exceed the concurrency bound.
+        let _permit = permit;
+        analyze_document(uri, text, doc_cache, pending_versions, open_docs, version)
+    })
+    .await;
+
+    let Ok(Some(lsp_diags)) = analysis else {
+        return;
+    };
+    publish_if_current(
+        &client,
+        &publish_uri,
+        lsp_diags,
+        &diags_cache,
+        &publish_versions,
+        version,
+    )
+    .await;
+}
+
+pub(crate) fn version_is_current(
+    pending_versions: &RwLock<HashMap<String, u64>>,
+    uri: &Url,
+    version: u64,
+) -> bool {
+    matches!(pending_versions.read().get(uri.as_ref()), Some(&current) if current == version)
+}
+
+/// Performs all blocking filesystem and compiler work away from Tokio workers.
+fn analyze_document(
+    uri: Url,
+    text: Arc<String>,
+    doc_cache: Arc<DocumentCache>,
+    pending_versions: Arc<RwLock<HashMap<String, u64>>>,
+    open_docs: Arc<RwLock<HashMap<String, Arc<String>>>>,
+    version: u64,
+) -> Option<Vec<tower_lsp::lsp_types::Diagnostic>> {
+    if !version_is_current(&pending_versions, &uri, version) {
+        return None;
+    }
     let mut chrn_cfg = ChrnConfig::default();
 
     let path_buf = uri_to_path(&uri);
@@ -510,17 +585,8 @@ pub async fn analyze_and_publish_task(
             // start defaults to 0.  Diagnostic spans produced up to that point
             // (e.g. unclosed multi-line comments) are still relative to the
             // start of the file, so this noop shift is the right default.
-            let diags = config_load_error_to_diagnostics(cfg_err, &text, 0);
-            publish_if_current(
-                &client,
-                &uri,
-                diags,
-                &diags_cache,
-                &pending_versions,
-                version,
-            )
-            .await;
-            return;
+            return version_is_current(&pending_versions, &uri, version)
+                .then(|| config_load_error_to_diagnostics(cfg_err, &text, 0));
         }
     };
 
@@ -535,6 +601,7 @@ pub async fn analyze_and_publish_task(
         main_state,
         &mut chrn_cfg,
         &doc_cache,
+        &open_docs,
         version,
         interner,
     );
@@ -549,36 +616,59 @@ pub async fn analyze_and_publish_task(
             .append_summary(&mut cfg_loader_warns);
     }
 
+    if !version_is_current(&pending_versions, &uri, version)
+        || !dependency_snapshots_are_current(&prepared.dependency_snapshots, &open_docs)
+    {
+        return None;
+    }
+
     // 3. Insert the prepared state into the cache.  If the same text is already
     //    cached, the existing state is reused.
-    let state_arc = doc_cache.insert_or_get(uri.as_ref(), Arc::clone(&text), prepared.state);
+    let state_arc =
+        doc_cache.insert_or_get_when(uri.as_ref(), Arc::clone(&text), prepared.state, || {
+            version_is_current(&pending_versions, &uri, version)
+                && dependency_snapshots_are_current(&prepared.dependency_snapshots, &open_docs)
+        })?;
 
     // 4. Run the compiler pipeline while holding only the per-document lock.
     //    `ensure_analyzed` returns the imported module URIs (moved out of the
-    //    resolution), or an empty vec when the state was already analyzed.
+    //    resolution), or `None` when the state was already analyzed.
     let imported_uris = {
-        let mut state = state_arc.write();
+        let mut state = state_arc.try_write_for(STATE_LOCK_TIMEOUT)?;
         state.ensure_analyzed(prepared.resolution)
     };
 
-    if !imported_uris.is_empty() {
-        doc_cache.register_dependencies(uri.as_ref(), &imported_uris);
+    if !version_is_current(&pending_versions, &uri, version)
+        || !dependency_snapshots_are_current(&prepared.dependency_snapshots, &open_docs)
+    {
+        doc_cache.invalidate_if_state(uri.as_ref(), &state_arc);
+        return None;
+    }
+
+    if let Some(imported_uris) = imported_uris
+        && !doc_cache.register_dependencies_for_state_when(
+            uri.as_ref(),
+            &state_arc,
+            &imported_uris,
+            || {
+                version_is_current(&pending_versions, &uri, version)
+                    && dependency_snapshots_are_current(&prepared.dependency_snapshots, &open_docs)
+            },
+        )
+    {
+        return None;
     }
 
     // 5. Get diagnostics and publish if still current.  Config-load diagnostics
     //    from the `Broken` path are prepended so they survive this (replacing)
     //    publish.
     let mut lsp_diags = pre_diags;
-    lsp_diags.extend(state_arc.read().get_lsp_diagnostics());
-    publish_if_current(
-        &client,
-        &uri,
-        lsp_diags,
-        &diags_cache,
-        &pending_versions,
-        version,
-    )
-    .await;
+    lsp_diags.extend(
+        state_arc
+            .try_read_for(STATE_LOCK_TIMEOUT)?
+            .get_lsp_diagnostics(),
+    );
+    version_is_current(&pending_versions, &uri, version).then_some(lsp_diags)
 }
 
 /// Publishes `lsp_diags` to the client only when `version` is still the latest version
@@ -606,9 +696,7 @@ async fn publish_if_current(
     // Check version
     {
         let vers = pending_versions.read();
-        if let Some(&v) = vers.get(uri.as_ref())
-            && v != version
-        {
+        if !matches!(vers.get(uri.as_ref()), Some(&v) if v == version) {
             return; // Newer version exists, discard these results
         }
     }
@@ -620,22 +708,19 @@ async fn publish_if_current(
         let digest = hasher.finish();
         // The JSON string is dropped here; only the digest persists in the cache.
         let key = uri.to_string();
-        let should_send = {
-            let mut cache = diags_cache.write();
-            evict_cache_if_needed(&mut cache);
-            match cache.get(&key) {
-                Some(prev) if *prev == digest => false,
-                _ => {
-                    cache.insert(key, digest);
-                    true
-                }
-            }
-        };
+        let should_send = !matches!(diags_cache.read().get(&key), Some(prev) if *prev == digest);
 
-        if should_send {
+        if should_send && version_is_current(pending_versions, uri, version) {
             client
                 .publish_diagnostics(uri.clone(), lsp_diags, None)
                 .await;
+            // Do not resurrect a digest after close or let a stale publish suppress
+            // the next current notification.
+            if version_is_current(pending_versions, uri, version) {
+                let mut cache = diags_cache.write();
+                evict_cache_if_needed(&mut cache);
+                cache.insert(key, digest);
+            }
         }
     } else {
         client
@@ -1011,6 +1096,8 @@ pub(crate) fn resolve_modules_lsp(
     settings: &ChrnConfig,
     interner: &mut Intern,
     doc_cache: &DocumentCache,
+    open_docs: &RwLock<HashMap<String, Arc<String>>>,
+    dependency_snapshots: &mut Vec<(String, Option<Arc<String>>)>,
     diags: &mut Vec<SourceDiagnostic>,
     main_path_id: PathId,
 ) {
@@ -1141,7 +1228,9 @@ pub(crate) fn resolve_modules_lsp(
             // `Vec<u8>` (`text.as_bytes().to_vec()`) on *every* analysis of *every*
             // importing document, just to satisfy the boxed-reader type.  The box now
             // borrows from `cached_text`, which outlives the `ConfigLoader` below.
-            let cached_text = doc_cache.get_text(uri.as_ref());
+            let open_text = open_docs.read().get(uri.as_ref()).map(Arc::clone);
+            dependency_snapshots.push((uri.to_string(), open_text.clone()));
+            let cached_text = open_text.or_else(|| doc_cache.get_text(uri.as_ref()));
             let source_res: Result<Box<dyn std::io::Read + '_>, ConfigLoadError> =
                 match &cached_text {
                     Some(text) => Ok(Box::new(Cursor::new(text.as_bytes()))),

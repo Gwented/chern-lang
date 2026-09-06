@@ -176,7 +176,7 @@ impl<'res> TypeResolver<'res> {
                         // to their ast id
                         SymbolKind::Variable(_) => self.resolve_var(sym_id, env),
                         // Users cannot define these but they exist internally.
-                        SymbolKind::ExternType
+                        SymbolKind::ExternType(_)
                         | SymbolKind::Namespace
                         | SymbolKind::Directive(_) => unreachable!(),
                     }
@@ -763,7 +763,7 @@ impl<'res> TypeResolver<'res> {
         };
 
         if !typechecker::check_cfg_root(&self.compiler, found_sym_id) {
-            let classified = SymbolKind::to_fmt(&self.compiler, found_sym_id);
+            let classified = SymbolKind::to_classified(&self.compiler, found_sym_id);
             let core_msg = format!("Cannot use type `{classified}` as a config root");
 
             let builder = SourceDiagnostic::builder(
@@ -1214,7 +1214,7 @@ impl<'res> TypeResolver<'res> {
         )?;
 
         if !typechecker::check_cfg_memb_override(self.compiler, out.found_sym_id) {
-            let classified = SymbolKind::to_fmt(&self.compiler, out.found_sym_id);
+            let classified = SymbolKind::to_classified(&self.compiler, out.found_sym_id);
             let core_msg = format!("Cannot use type `{classified}` as an override config member");
 
             let last_span = sp_path_segs[sp_path_segs.len() - 1].span;
@@ -1518,11 +1518,31 @@ impl<'res> TypeResolver<'res> {
                                 continue;
                             }
                         };
-                    debug_assert_eq!(
-                        self.compiler.syms[extern_type_sym_id].kind.to_flat(),
+                    // Probably should be a preset err version
+                    if !typechecker::is_expected_sym(
+                        &self.compiler.syms,
                         SymbolKindFlat::ExternType,
-                        "Add typechecker for extern type"
-                    );
+                        extern_type_sym_id,
+                    ) {
+                        let start = abs_multi.assigned_to[0].span.start;
+                        let end = abs_multi.assigned_to[abs_multi.assigned_to.len() - 1]
+                            .span
+                            .end;
+                        let span = SourceSpan::new(env.region.region_id, start, end);
+
+                        let preset_err = PresetErr::SymbolMismatch {
+                            expected_kind: SymbolKindFlat::ExternType,
+                            sp_found_sym_id: SpannedContainer::new(extern_type_sym_id, span),
+                        };
+                        preset_reporter::report_preset(
+                            self.compiler,
+                            &mut self.summary,
+                            preset_err,
+                            env.region,
+                            self.cfg,
+                            self.interner,
+                        );
+                    };
 
                     let impl_memb_id = ImplMemberId::new(self.compiler.impl_membs.len() as u32);
                     let multi_assign =
@@ -2181,7 +2201,7 @@ impl<'res> TypeResolver<'res> {
                 //
                 // These are unreachable because their symbols are never delayed in resolution.
                 // Only expressions have a complex instantiation process.
-                SymbolKind::ExternType
+                SymbolKind::ExternType(_)
                 | SymbolKind::Type(_)
                 | SymbolKind::Namespace
                 | SymbolKind::Directive(_) => {
@@ -3251,7 +3271,7 @@ impl<'res> TypeResolver<'res> {
                             SymbolKind::Type(type_id) => todo!(),
                             SymbolKind::Namespace => todo!(),
                             SymbolKind::Directive(directive_id) => todo!(),
-                            SymbolKind::ExternType => todo!(),
+                            SymbolKind::ExternType(_) => todo!(),
                         };
 
                         self.compiler.exprs.push(expr);
@@ -3464,10 +3484,12 @@ impl<'res> TypeResolver<'res> {
 
                             return Err(PresetErr::General(src_diag));
                         }
-                        // Not possible
-                        SymbolKind::Directive(_) => unreachable!("We'll see"),
-                        // FIXME: There may need to be an expr result specifically for an extern type.
-                        SymbolKind::ExternType => todo!(),
+                        // NOTE: Symbols can't resolve to an extern type, it's something built-in
+                        // to. Same for directive.
+                        SymbolKind::ExternType(_) | SymbolKind::Directive(_) => {
+                            // Ok buddy
+                            unreachable!("YOU LIED")
+                        }
                     };
 
                     self.compiler.exprs.push(resolved_expr);

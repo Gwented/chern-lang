@@ -9,8 +9,8 @@
 //! | [`KEYWORD_DOCS`]      | `Keyword as usize`          | 15     |
 //! | [`BUILTIN_TYPE_DOCS`] | `BuiltinTypeKind as usize`  | 27     |
 //! | [`FUNC_DOCS`]         | `FuncKind as usize`         | 7      |
-//! | [`DIRECTIVE_DOCS`]    | key name (`&str`)           | 6      |
-//! | [`CONFIG_OPTION_DOCS`]| key name (`&str`)           | 3      |
+//! | [`DIRECTIVE_DOCS`]    | preloaded [`InternedId`]     | 6      |
+//! | [`CONFIG_OPTION_DOCS`]| preloaded [`InternedId`]     | 3      |
 //!
 //! ## Alignment invariant
 //!
@@ -22,6 +22,13 @@
 //! Accessor methods on [`Document`] (`keyword_docs`, `builtin_type_docs`, `func_docs`)
 //! index directly into these arrays; an out-of-bounds index will panic at runtime.
 
+use chrn_utils::{
+    id_types::InternedId,
+    intern::{
+        INTERNED_BIN, INTERNED_CASES, INTERNED_DEFAULT_VAL, INTERNED_HEX, INTERNED_IDENTS,
+        INTERNED_IGNORE, INTERNED_OCTAL, INTERNED_SCIENT, INTERNED_WARN,
+    },
+};
 use compilation::semantic::hir::hir_symbols::FuncKind;
 use lang::keywords::Keyword;
 use lang::types::builtins::BuiltinTypeKind;
@@ -55,28 +62,41 @@ impl Document {
     }
 
     /// Returns the document for a given keyword variant.
-    pub fn keyword_docs(kw: Keyword) -> &'static Document {
+    pub const fn keyword_docs(kw: Keyword) -> &'static Document {
         &KEYWORD_DOCS[kw as usize]
     }
 
     /// Returns the document for a given builtin type kind.
-    pub fn builtin_type_docs(kind: BuiltinTypeKind) -> &'static Document {
+    pub const fn builtin_type_docs(kind: BuiltinTypeKind) -> &'static Document {
         &BUILTIN_TYPE_DOCS[kind as usize]
     }
 
     /// Returns the document for a given intrinsic function kind.
-    pub fn func_docs(kind: FuncKind) -> &'static Document {
+    pub const fn func_docs(kind: FuncKind) -> &'static Document {
         &FUNC_DOCS[kind as usize]
     }
 
-    /// Returns the document for a directive by name, or `None` if unknown.
-    pub fn directive_docs(name: &str) -> Option<&'static Document> {
-        DIRECTIVE_DOCS.iter().find(|d| d.key == name)
+    /// Returns the document for a directive by interned id, or `None` if unknown.
+    pub const fn directive_docs(name_id: InternedId) -> Option<&'static Document> {
+        match name_id.id {
+            INTERNED_WARN => Some(&DIRECTIVE_DOCS[0]),
+            INTERNED_IGNORE => Some(&DIRECTIVE_DOCS[1]),
+            INTERNED_SCIENT => Some(&DIRECTIVE_DOCS[2]),
+            INTERNED_HEX => Some(&DIRECTIVE_DOCS[3]),
+            INTERNED_BIN => Some(&DIRECTIVE_DOCS[4]),
+            INTERNED_OCTAL => Some(&DIRECTIVE_DOCS[5]),
+            _ => None,
+        }
     }
 
-    /// Returns the document for a config option by name, or `None` if unknown.
-    pub fn config_option_docs(name: &str) -> Option<&'static Document> {
-        CONFIG_OPTION_DOCS.iter().find(|d| d.key == name)
+    /// Returns the document for a config option by interned id, or `None` if unknown.
+    pub const fn config_option_docs(name_id: InternedId) -> Option<&'static Document> {
+        match name_id.id {
+            INTERNED_CASES => Some(&CONFIG_OPTION_DOCS[0]),
+            INTERNED_IDENTS => Some(&CONFIG_OPTION_DOCS[1]),
+            INTERNED_DEFAULT_VAL => Some(&CONFIG_OPTION_DOCS[2]),
+            _ => None,
+        }
     }
 }
 
@@ -380,11 +400,10 @@ pub static FUNC_DOCS: [Document; 7] = [
 
 // ── Directives ────────────────────────────────────────────────────────────────
 //
-// Ordered by directive index: warn, ignore, scient, hex, bin, octal.
-// Looked up by key name via [`Document::directive_docs`].
+// The accessor explicitly maps each preloaded id to its local table index.
 /// Hover documentation for each Chern directive.
 ///
-/// Indexed by key name via [`Document::directive_docs`].
+/// Indexed by preloaded [`InternedId`] via [`Document::directive_docs`].
 pub static DIRECTIVE_DOCS: [Document; 6] = [
     Document {
         key: "warn",
@@ -422,10 +441,9 @@ pub static DIRECTIVE_DOCS: [Document; 6] = [
 
 // ── Config Options ────────────────────────────────────────────────────────────
 //
-// Looked up by key name via [`Document::config_option_docs`].
 /// Hover documentation for schema config options used in `complex->`.
 ///
-/// Indexed by key name via [`Document::config_option_docs`].
+/// Indexed by preloaded [`InternedId`] via [`Document::config_option_docs`].
 pub static CONFIG_OPTION_DOCS: [Document; 3] = [
     Document {
         key: "cases",
@@ -475,5 +493,51 @@ mod tests {
             7,
             "FUNC_DOCS must have one entry per FuncKind variant"
         );
+    }
+
+    #[test]
+    fn directive_docs_map_preloaded_ids_to_their_documents() {
+        let expected = [
+            (INTERNED_WARN, "warn"),
+            (INTERNED_IGNORE, "ignore"),
+            (INTERNED_SCIENT, "scient"),
+            (INTERNED_HEX, "hex"),
+            (INTERNED_BIN, "bin"),
+            (INTERNED_OCTAL, "octal"),
+        ];
+
+        for (id, key) in expected {
+            assert_eq!(
+                Document::directive_docs(InternedId::new(id)).map(|document| document.key),
+                Some(key),
+                "directive id {id} should resolve to {key} documentation"
+            );
+        }
+    }
+
+    #[test]
+    fn config_option_docs_map_preloaded_ids_to_their_documents() {
+        let expected = [
+            (INTERNED_CASES, "cases"),
+            (INTERNED_IDENTS, "idents"),
+            (INTERNED_DEFAULT_VAL, "default_val"),
+        ];
+
+        for (id, key) in expected {
+            assert_eq!(
+                Document::config_option_docs(InternedId::new(id)).map(|document| document.key),
+                Some(key),
+                "config option id {id} should resolve to {key} documentation"
+            );
+        }
+    }
+
+    #[test]
+    fn interned_document_lookups_reject_unknown_ids() {
+        assert!(Document::directive_docs(InternedId::new(INTERNED_CASES)).is_none());
+        assert!(Document::directive_docs(InternedId::new(u32::MAX)).is_none());
+
+        assert!(Document::config_option_docs(InternedId::new(INTERNED_WARN)).is_none());
+        assert!(Document::config_option_docs(InternedId::new(u32::MAX)).is_none());
     }
 }

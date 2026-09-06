@@ -114,7 +114,9 @@ pub fn resolve_type_expr(
                         // External types are too restricted to their particular scope that this is
                         // not actually possible. `override` doesn't have access to type expression
                         // declarations.
-                        SymbolKind::ExternType => unreachable!(),
+                        // This is IMPOSSIBLE to reach unless extern types become some general type
+                        // usable, which would be against the language's intent.
+                        SymbolKind::ExternType(_) => unreachable!(),
                     }
                 }
                 None => {
@@ -399,6 +401,7 @@ pub fn resolve_static_access(
         // like IN namespace only rather than search in this specific namespace which may be a
         // module or individual scope. That means, unless "core::i32::MAX" is actively done, it will
         // never find the i32 because it gets rid of core in `NamespaceOnly`.
+        // (We should probably solve this differently)
         let lookup_pat = if i == 0 {
             ScopeLookupPattern::NoRestrictions
         } else {
@@ -421,8 +424,16 @@ pub fn resolve_static_access(
                         Some(new_scope) => {
                             // Transitioning to next namespace
                             current_scope = new_scope;
+
+                            // Prevents situations like `core::u8` accessing then namespace inside
+                            // `u8` by checking if we are 1 before the end so that we avoid trying
+                            // to get a namespace out of the final segment.
+                            if i + 2 == sp_path_segs.len() {
+                                break;
+                            }
                         }
                         None => {
+                            // If the current iteration is the last iteration then we know it's an error
                             if i + 1 < sp_path_segs.len() {
                                 return StaticAccessResult::NoNamespace(SpannedContainer::new(
                                     *interned_id,

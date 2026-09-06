@@ -6,7 +6,10 @@ use chrn_utils::{
     utils::containers::SpannedContainer,
 };
 use lang::{
-    types::builtins::{BuiltinType, BuiltinTypeKind},
+    types::{
+        builtins::{BuiltinType, BuiltinTypeKind},
+        externs::{ExternPlatformType, java_types::JavaTypeKind, rust_types::RustTypeKind},
+    },
     values::Value,
 };
 
@@ -39,6 +42,147 @@ use crate::{
 /// Builds the core module the same way `ScriptCompiler::init` does, with no user modules
 fn core_only_compiler() -> ScriptCompiler {
     ScriptCompiler::init(None, Arena::new())
+}
+
+#[test]
+fn complex_scope_instantiates_extern_type_namespaces() {
+    let mut compiler = core_only_compiler();
+    let core_mod_id = compiler.intrinsic_registry.core_mod_id;
+    compiler.push_scope(ScopeType::Complex, core_mod_id);
+    let complex_scope_id = compiler
+        .intrinsic_registry
+        .complex_scope_id
+        .expect("pushing a complex scope should create its intrinsic scope");
+
+    let descend_namespace = |scope_id: ScopeId, name_id: u32| {
+        let sym_id = compiler.scopes[scope_id]
+            .scope
+            .table
+            .interned_to_sym
+            .get(&InternedId::new(name_id))
+            .copied()
+            .expect("namespace should be instantiated");
+        let sym = &compiler.syms[sym_id];
+        assert!(matches!(sym.kind, SymbolKind::Namespace));
+        let Some(AssociatedScopeKind::Scope(child_scope_id)) = sym.associated_scope else {
+            panic!("namespace should own a scope");
+        };
+        child_scope_id
+    };
+
+    let rust_upper_scope = descend_namespace(complex_scope_id, intern::INTERNED_RUST_UPPER);
+    let types_scope = descend_namespace(rust_upper_scope, intern::INTERNED_TYPES_LOWER);
+    let rust_lower_scope = descend_namespace(types_scope, intern::INTERNED_RUST_LOWER);
+
+    assert_eq!(
+        compiler.scopes[rust_upper_scope]
+            .scope
+            .table
+            .interned_to_sym
+            .len(),
+        1
+    );
+    assert_eq!(
+        compiler.scopes[types_scope]
+            .scope
+            .table
+            .interned_to_sym
+            .len(),
+        1
+    );
+
+    let expected = [
+        (intern::INTERNED_U8, RustTypeKind::U8),
+        (intern::INTERNED_I8, RustTypeKind::I8),
+        (intern::INTERNED_U16, RustTypeKind::U16),
+        (intern::INTERNED_I16, RustTypeKind::I16),
+        (intern::INTERNED_U32, RustTypeKind::U32),
+        (intern::INTERNED_I32, RustTypeKind::I32),
+        (intern::INTERNED_F32, RustTypeKind::F32),
+        (intern::INTERNED_U64, RustTypeKind::U64),
+        (intern::INTERNED_I64, RustTypeKind::I64),
+        (intern::INTERNED_F64, RustTypeKind::F64),
+        (intern::INTERNED_I128, RustTypeKind::I128),
+        (intern::INTERNED_U128, RustTypeKind::U128),
+        (intern::INTERNED_F128, RustTypeKind::F128),
+        (intern::INTERNED_USIZE, RustTypeKind::Usize),
+        (intern::INTERNED_ISIZE, RustTypeKind::Isize),
+        (intern::INTERNED_BOOL, RustTypeKind::Bool),
+        (intern::INTERNED_CHAR, RustTypeKind::Char),
+        (intern::INTERNED_STR, RustTypeKind::Str),
+        (intern::INTERNED_STRING, RustTypeKind::String),
+    ];
+    let rust_table = &compiler.scopes[rust_lower_scope]
+        .scope
+        .table
+        .interned_to_sym;
+
+    assert_eq!(rust_table.len(), expected.len());
+    for (name_id, rust_kind) in expected {
+        let sym_id = rust_table
+            .get(&InternedId::new(name_id))
+            .copied()
+            .expect("Rust extern type should be instantiated");
+        assert!(
+            matches!(
+                compiler.syms[sym_id].kind,
+                SymbolKind::ExternType(ExternPlatformType::Rust(found)) if found == rust_kind
+            ),
+            "Rust extern symbol for interned id {name_id} has the wrong type"
+        );
+    }
+
+    let java_upper_scope = descend_namespace(complex_scope_id, intern::INTERNED_JAVA_UPPER);
+    let types_scope = descend_namespace(java_upper_scope, intern::INTERNED_TYPES_LOWER);
+    let java_lower_scope = descend_namespace(types_scope, intern::INTERNED_JAVA_LOWER);
+
+    assert_eq!(
+        compiler.scopes[java_upper_scope]
+            .scope
+            .table
+            .interned_to_sym
+            .len(),
+        1
+    );
+    assert_eq!(
+        compiler.scopes[types_scope]
+            .scope
+            .table
+            .interned_to_sym
+            .len(),
+        1
+    );
+
+    let expected = [
+        (intern::INTERNED_LONG, JavaTypeKind::Long),
+        (intern::INTERNED_INT, JavaTypeKind::Int),
+        (intern::INTERNED_SHORT, JavaTypeKind::Short),
+        (intern::INTERNED_BYTE, JavaTypeKind::Byte),
+        (intern::INTERNED_FLOAT_LOWER, JavaTypeKind::Float),
+        (intern::INTERNED_DOUBLE, JavaTypeKind::Double),
+        (intern::INTERNED_BOOLEAN, JavaTypeKind::Boolean),
+        (intern::INTERNED_CHAR, JavaTypeKind::Char),
+        (intern::INTERNED_STRING, JavaTypeKind::String),
+    ];
+    let java_table = &compiler.scopes[java_lower_scope]
+        .scope
+        .table
+        .interned_to_sym;
+
+    assert_eq!(java_table.len(), expected.len());
+    for (name_id, java_kind) in expected {
+        let sym_id = java_table
+            .get(&InternedId::new(name_id))
+            .copied()
+            .expect("Java extern type should be instantiated");
+        assert!(
+            matches!(
+                compiler.syms[sym_id].kind,
+                SymbolKind::ExternType(ExternPlatformType::Java(found)) if found == java_kind
+            ),
+            "Java extern symbol for interned id {name_id} has the wrong type"
+        );
+    }
 }
 
 #[test]
@@ -767,7 +911,7 @@ static COUNT_LEAF_DATASET: [InstantiationSymbolBase; 2] = [
         SymbolOrigin::Compiler,
         ScopeType::Compiler,
         false,
-        InstantiationSymbolKind::ExternType,
+        InstantiationSymbolKind::ExternType(ExternPlatformType::Java(JavaTypeKind::Int)),
     ),
 ];
 

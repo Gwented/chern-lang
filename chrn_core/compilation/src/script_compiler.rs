@@ -17,7 +17,7 @@ use chrn_utils::{
     source_map::source_span::SourceSpan,
 };
 use lang::{
-    directives::{Directive, TypeDirective},
+    directives::Directive,
     types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
 };
 
@@ -571,7 +571,7 @@ impl ScriptCompiler {
                     VariableState::ReservedTypeSlot(type_id) => type_id,
                     VariableState::Known(val_id) => self.values[val_id].type_id,
                 },
-                SymbolKind::ExternType | SymbolKind::Namespace | SymbolKind::Directive(_) => {
+                SymbolKind::ExternType(_) | SymbolKind::Namespace | SymbolKind::Directive(_) => {
                     unreachable!()
                 }
             },
@@ -588,7 +588,9 @@ impl ScriptCompiler {
                     VariableState::ReservedTypeSlot(type_id) => Some(type_id),
                     VariableState::Known(val_id) => Some(self.values[val_id].type_id),
                 },
-                SymbolKind::ExternType | SymbolKind::Directive(_) | SymbolKind::Namespace => None,
+                SymbolKind::ExternType(_) | SymbolKind::Directive(_) | SymbolKind::Namespace => {
+                    None
+                }
             },
         }
     }
@@ -633,7 +635,7 @@ impl ScriptCompiler {
                 VariableMetadata::Generated => None,
             },
             // SymbolKind::Config(cfg_id) => Some(self.cfgs[*cfg_id].name_span),
-            SymbolKind::ExternType | SymbolKind::Namespace | SymbolKind::Directive(_) => None,
+            SymbolKind::ExternType(_) | SymbolKind::Namespace | SymbolKind::Directive(_) => None,
         }
     }
 
@@ -979,9 +981,9 @@ impl ScriptCompiler {
 
                     self.register_instantiation_bases(scope_id, syms);
                 }
-                InstantiationSymbolKind::ExternType => {
+                InstantiationSymbolKind::ExternType(plat_kind) => {
                     let sym_id = SymbolId::new(self.syms.len() as u32);
-                    let sym_kind = SymbolKind::ExternType;
+                    let sym_kind = SymbolKind::ExternType(*plat_kind);
                     let sym = base.to_sym(sym_id, None, None, sym_kind);
 
                     let current_table = &mut self.scopes[current_scope_id].scope.table;

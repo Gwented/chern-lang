@@ -47,6 +47,10 @@ use compilation::semantic::hir::hir_symbols::{
     MemberSymbolKind, SymbolKind, SymbolOrigin, VariableState,
 };
 use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
+use lang::types::externs::{
+    CharacterEncoding, ExternPlatformType, ExternTypeRepresentation,
+    Signedness, TypeWidth,
+};
 use lang::values::Value;
 use tower_lsp::lsp_types;
 
@@ -260,9 +264,7 @@ fn symbol_hover(
     compiler: &ScriptCompiler,
     sym_id: chrn_utils::id_types::SymbolId,
 ) -> String {
-    let Some(sym) = compiler.syms.get(sym_id) else {
-        return String::new();
-    };
+    let sym = &compiler.syms[sym_id];
     let interner = &state.interner;
 
     let mut hover_text = match sym.kind {
@@ -301,22 +303,20 @@ fn symbol_hover(
             }
             AssociatedScopeKind::Scope(scope_id) => {
                 let namespace_kind = if compiler.scopes[scope_id].scope.is_intrinsic {
-                    "intrinsic namespace"
+                    "Intrinsic Namespace"
                 } else {
-                    "namespace"
+                    "Namespace"
                 };
                 format!("{} **{}**", namespace_kind, interner.search(sym.name_id))
             }
         },
         SymbolKind::Directive(_) => {
             let name = interner.search(sym.name_id);
-            Document::directive_docs(name)
+            Document::directive_docs(sym.name_id)
                 .map(|d| d.compose())
                 .unwrap_or_else(|| format!("`#{}`", name))
         }
-        //TODO: `ExternType` is unfinished in core and carries no type or value to
-        //describe yet, so hover only names it.
-        SymbolKind::ExternType => format!("extern type **{}**", interner.search(sym.name_id)),
+        SymbolKind::ExternType(extern_ty) => extern_type_hover(interner, extern_ty),
     };
 
     if !hover_text.is_empty() {
@@ -329,6 +329,70 @@ fn symbol_hover(
         ));
     }
     hover_text
+}
+
+fn extern_type_hover(interner: &Intern, extern_ty: ExternPlatformType) -> String {
+    let metadata = extern_ty.metadata();
+    let representation = match metadata.representation {
+        ExternTypeRepresentation::Integer { signedness, width } => format!(
+            "{} {} integer",
+            format_width(width),
+            format_signedness(signedness)
+        ),
+        ExternTypeRepresentation::Float { width } => {
+            format!("{} floating-point number", format_width(width))
+        }
+        ExternTypeRepresentation::Bool => "boolean".to_string(),
+        ExternTypeRepresentation::Character { encoding, width } => format!(
+            "{} character ({})",
+            format_width(width),
+            format_encoding(encoding)
+        ),
+        ExternTypeRepresentation::String { encoding } => {
+            format!("string ({})", format_encoding(encoding))
+        }
+        ExternTypeRepresentation::ArbitraryInteger { signedness } => {
+            format!(
+                "arbitrary-precision {} integer",
+                format_signedness(signedness)
+            )
+        }
+        ExternTypeRepresentation::ArbitraryFloat => {
+            "arbitrary-precision floating-point number".to_string()
+        }
+    };
+
+    format!(
+        "extern type **{}**\n\n**Representation:** {}",
+        interner.search(metadata.name_id),
+        representation
+    )
+}
+
+fn format_signedness(signedness: Signedness) -> &'static str {
+    match signedness {
+        Signedness::Signed => "signed",
+        Signedness::Unsigned => "unsigned",
+    }
+}
+
+fn format_width(width: TypeWidth) -> String {
+    match width {
+        TypeWidth::Fixed(bits) => format!("{bits}-bit"),
+        TypeWidth::Pointer => "pointer-width".to_string(),
+        TypeWidth::Runtime => "runtime-width".to_string(),
+    }
+}
+
+fn format_encoding(encoding: CharacterEncoding) -> &'static str {
+    match encoding {
+        CharacterEncoding::Ascii => "ASCII",
+        CharacterEncoding::Utf8 => "UTF-8",
+        CharacterEncoding::Utf16 => "UTF-16",
+        CharacterEncoding::Utf32 => "UTF-32",
+        CharacterEncoding::UnicodeScalar => "Unicode scalar value",
+        CharacterEncoding::Platform => "platform encoding",
+    }
 }
 
 /// Hover body for a symbol that names a type.
@@ -383,27 +447,26 @@ fn field_hover(
         return String::new();
     };
     let ast_id = sym.ast_id.expect("owner_decl checked the ast id");
-    let Some(field) = ast.get_struct(ast_id).fields.get(field_idx) else {
-        return String::new();
-    };
+    let field = &ast.get_struct(ast_id).fields[field_idx];
     let field_name = state.interner.search(field.name_id);
 
-    if let SymbolKind::Type(tid) = sym.kind
-        && let Type::Struct(sdef) = &compiler.types[tid].ty
-        && let Some(member_id) = sdef.fields.get(field_idx)
-        && let Some(MemberSymbolKind::Field(field_repre)) = compiler.sym_members.get(*member_id)
-    {
-        let type_str = format_type(
-            &compiler.types[field_repre.type_id].ty,
-            compiler,
-            &state.interner,
-            TypeDisplay::Reference,
-        );
-        return format!("{}: {}", field_name, type_str);
-    }
-
-    // Type resolution failed; the name alone is still worth showing.
-    format!("{}: Unknown", field_name)
+    let SymbolKind::Type(type_id) = sym.kind else {
+        unreachable!("field owner must be a type symbol")
+    };
+    let Type::Struct(struct_def) = &compiler.types[type_id].ty else {
+        unreachable!("field owner must reference a struct type")
+    };
+    let MemberSymbolKind::Field(field_repre) = &compiler.sym_members[struct_def.fields[field_idx]]
+    else {
+        unreachable!("struct field id must reference a field member")
+    };
+    let type_str = format_type(
+        &compiler.types[field_repre.type_id].ty,
+        compiler,
+        &state.interner,
+        TypeDisplay::Reference,
+    );
+    format!("{}: {}", field_name, type_str)
 }
 
 /// Hover for an enum variant: `name: Type`, or just the name when it carries no type.
@@ -417,27 +480,31 @@ fn variant_hover(
         return String::new();
     };
     let ast_id = sym.ast_id.expect("owner_decl checked the ast id");
-    let Some(variant) = ast.get_enum(ast_id).variants.get(variant_idx) else {
-        return String::new();
-    };
+    let variant = &ast.get_enum(ast_id).variants[variant_idx];
     let variant_name = state.interner.search(variant.name_id);
 
-    if let SymbolKind::Type(tid) = sym.kind
-        && let Type::Enum(edef) = &compiler.types[tid].ty
-        && let Some(member_id) = edef.variants.get(variant_idx)
-        && let Some(MemberSymbolKind::Variant(variant_repre)) = compiler.sym_members.get(*member_id)
-        && let Some(vty_id) = variant_repre.type_id
-    {
+    let SymbolKind::Type(type_id) = sym.kind else {
+        unreachable!("variant owner must be a type symbol")
+    };
+    let Type::Enum(enum_def) = &compiler.types[type_id].ty else {
+        unreachable!("variant owner must reference an enum type")
+    };
+    let MemberSymbolKind::Variant(variant_repre) =
+        &compiler.sym_members[enum_def.variants[variant_idx]]
+    else {
+        unreachable!("enum variant id must reference a variant member")
+    };
+    if let Some(vty_id) = variant_repre.type_id {
         let type_str = format_type(
             &compiler.types[vty_id].ty,
             compiler,
             &state.interner,
             TypeDisplay::Reference,
         );
-        return format!("{}: {}", variant_name, type_str);
+        format!("{}: {}", variant_name, type_str)
+    } else {
+        variant_name.to_string()
     }
-
-    variant_name.to_string()
 }
 
 /// The symbol owning a member plus the AST of the module that declared it.
@@ -449,13 +516,13 @@ fn owner_decl<'a>(
     &'a compilation::semantic::hir::hir_symbols::Symbol,
     &'a compilation::parser::ast::ast_concepts::AstInfo,
 )> {
-    let sym = compiler.syms.get(owner_sym_id)?;
+    let sym = &compiler.syms[owner_sym_id];
     sym.ast_id?;
     let owner_id = match sym.sym_origin {
         SymbolOrigin::Module(mid) => mid.id as usize,
         SymbolOrigin::Compiler => 0,
     };
-    let ast = state.asts.get(owner_id)?.as_ref()?;
+    let ast = state.asts[owner_id].as_ref()?;
     Some((sym, ast))
 }
 
@@ -470,7 +537,7 @@ fn module_hover(
     let interner = &state.interner;
     let mod_path = module
         .region_id
-        .and_then(|region_id| state.region_arena.get(region_id))
+        .map(|region_id| &state.region_arena[region_id])
         .map(|region| interner.search_path(region.path_id).display().to_string())
         .unwrap_or_else(|| "<builtin>".to_string());
 
@@ -522,17 +589,16 @@ fn config_member_hover(
         return format!("Configures **{}**: Unknown", name);
     };
 
-    match compiler.sym_members.get(linked_memb_id) {
-        Some(MemberSymbolKind::Field(field_repre)) => format!(
+    match &compiler.sym_members[linked_memb_id] {
+        MemberSymbolKind::Field(field_repre) => format!(
             "Configures field **{}**: `{}`",
             name,
             type_of(field_repre.type_id)
         ),
-        Some(MemberSymbolKind::Variant(variant_repre)) => match variant_repre.type_id {
+        MemberSymbolKind::Variant(variant_repre) => match variant_repre.type_id {
             Some(vty_id) => format!("Configures variant **{}**: `{}`", name, type_of(vty_id)),
             None => format!("Configures variant **{}**", name),
         },
-        None => format!("Configures **{}**: Unknown", name),
     }
 }
 
@@ -548,7 +614,7 @@ fn config_option_hover(
         _ => return String::new(),
     };
     let name = state.interner.search(name_id);
-    document::Document::config_option_docs(name)
+    document::Document::config_option_docs(name_id)
         .map(|doc| doc.compose())
         .unwrap_or_else(|| format!("**{}**\n\nUnknown option", name))
 }
@@ -606,11 +672,7 @@ fn format_type(
             b => interner.search(b.kind().name_id()).to_string(),
         },
         Type::Struct(struct_def) => {
-            let name = compiler
-                .syms
-                .get(struct_def.sym_id)
-                .map(|sym| interner.search(sym.name_id))
-                .unwrap_or("<struct>");
+            let name = interner.search(compiler.syms[struct_def.sym_id].name_id);
 
             if matches!(style, TypeDisplay::Reference) {
                 return name.to_string();
@@ -622,26 +684,24 @@ fn format_type(
                 let fields: Vec<String> = struct_def
                     .fields
                     .iter()
-                    .filter_map(|member_id| match compiler.sym_members.get(*member_id)? {
+                    .map(|member_id| match &compiler.sym_members[*member_id] {
                         MemberSymbolKind::Field(field) => {
                             let field_name = interner.search(field.name_id);
                             let field_ty = &compiler.types[field.type_id].ty;
                             let field_ty_str =
                                 format_type(field_ty, compiler, interner, TypeDisplay::Reference);
-                            Some(format!("\t{}: {}", field_name, field_ty_str))
+                            format!("\t{}: {}", field_name, field_ty_str)
                         }
-                        _ => None,
+                        MemberSymbolKind::Variant(_) => {
+                            unreachable!("struct field id must reference a field member")
+                        }
                     })
                     .collect();
                 format!("struct {} {{\n{}\n}}", name, fields.join("\n"))
             }
         }
         Type::Enum(enum_def) => {
-            let name = compiler
-                .syms
-                .get(enum_def.sym_id)
-                .map(|sym| interner.search(sym.name_id))
-                .unwrap_or("<enum>");
+            let name = interner.search(compiler.syms[enum_def.sym_id].name_id);
 
             if matches!(style, TypeDisplay::Reference) {
                 return name.to_string();
@@ -653,7 +713,7 @@ fn format_type(
                 let variants: Vec<String> = enum_def
                     .variants
                     .iter()
-                    .filter_map(|member_id| match compiler.sym_members.get(*member_id)? {
+                    .map(|member_id| match &compiler.sym_members[*member_id] {
                         MemberSymbolKind::Variant(v) => {
                             let variant_name = interner.search(v.name_id);
 
@@ -665,12 +725,14 @@ fn format_type(
                                     interner,
                                     TypeDisplay::Reference,
                                 );
-                                Some(format!("\t{}: {}", variant_name, variant_ty_str))
+                                format!("\t{}: {}", variant_name, variant_ty_str)
                             } else {
-                                Some(format!("\t{}", variant_name))
+                                format!("\t{}", variant_name)
                             }
                         }
-                        _ => None,
+                        MemberSymbolKind::Field(_) => {
+                            unreachable!("enum variant id must reference a variant member")
+                        }
                     })
                     .collect();
                 format!("enum {} {{\n{}\n}}", name, variants.join("\n"))
@@ -687,11 +749,7 @@ fn format_type(
             format!("{prefix} {name}")
         }
         Type::Alias(alias_def) => {
-            let name = compiler
-                .syms
-                .get(alias_def.sym_id)
-                .map(|sym| interner.search(sym.name_id))
-                .unwrap_or("<alias>");
+            let name = interner.search(compiler.syms[alias_def.sym_id].name_id);
 
             if matches!(style, TypeDisplay::Reference) {
                 return name.to_string();
@@ -701,11 +759,7 @@ fn format_type(
                 .params
                 .iter()
                 .map(|p| {
-                    let p_name = compiler
-                        .syms
-                        .get(p.sym_id)
-                        .map(|sym| interner.search(sym.name_id))
-                        .unwrap_or("<param>");
+                    let p_name = interner.search(compiler.syms[p.sym_id].name_id);
                     let p_constraint = format_type(
                         &compiler.types[p.type_id].ty,
                         compiler,

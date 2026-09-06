@@ -17,6 +17,7 @@
 //! Overlapping/redundant `TextEdit` ranges within each file are removed with
 //! [`crate::text::deduplicate_range_indices`] before the `WorkspaceEdit` is assembled.
 
+use crate::state::STATE_LOCK_TIMEOUT;
 use crate::state::{DocumentCache, DocumentState, EntityOccurrence, SemanticEntity};
 use crate::text::{LineIndex, position_to_offset};
 use chrn_utils::id_types::SymbolId;
@@ -105,7 +106,7 @@ pub fn compute_rename(
     // this one, and `parking_lot`'s `RwLock` is not reentrant (see
     // `references::compute_references` for the same constraint).
     let (def_path, def_span, def_owner_sym_id, is_local, local_edits) = {
-        let state = state_arc.read();
+        let state = state_arc.try_read_for(STATE_LOCK_TIMEOUT)?;
 
         let byte_offset = position_to_offset(&state.text, position);
         if state.offset_in_comment(byte_offset) {

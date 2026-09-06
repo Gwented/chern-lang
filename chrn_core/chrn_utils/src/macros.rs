@@ -1,5 +1,3 @@
-// Will be moved eventually. Maybe.
-
 /// Convenience macro which prints the current file of the error and the max loops that were
 /// exceeded.
 ///

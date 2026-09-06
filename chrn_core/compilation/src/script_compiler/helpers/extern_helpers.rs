@@ -1,6 +1,8 @@
 //! Holds external type instantiation helpers
 pub mod java_helpers;
+pub mod rust_helpers;
 use chrn_utils::id_types::InternedId;
+use lang::types::externs::ExternPlatformType;
 
 use crate::{
     lookup::scopes::scopes_concepts::ScopeType,
@@ -14,8 +16,10 @@ use crate::{
 //which loops just find for all representations, but the entry itself must also follow this ruling.
 
 /// All known namespaces for external types like for "c::unsinged_long_long_int" and "java::int"
-pub static ALL_EXTERN_NAMESPACES_DATASET: [&[InstantiationSymbolBase]; 1] =
-    [&java_helpers::JAVA_NAMESPACE_ENTRY];
+pub static ALL_EXTERN_NAMESPACES_DATASET: [&[InstantiationSymbolBase]; 2] = [
+    &java_helpers::JAVA_NAMESPACE_ENTRY,
+    &rust_helpers::RUST_NAMESPACE_ENTRY,
+];
 
 // Expected default for extern types
 const EXTERN_SYM_ORIGIN: SymbolOrigin = SymbolOrigin::Compiler;
@@ -37,13 +41,13 @@ const fn new_extern_namespace(
 }
 
 /// Domain-specific constructor helper for `InstantiationSymbolBase`
-const fn new_extern_sym(name_id: u32) -> InstantiationSymbolBase {
+const fn new_extern_sym(name_id: u32, extern_ty: ExternPlatformType) -> InstantiationSymbolBase {
     InstantiationSymbolBase::new(
         InternedId::new(name_id),
         EXTERN_SYM_ORIGIN,
         EXTERN_SCOPE_TYPE,
         EXTERN_IS_PRIV,
-        InstantiationSymbolKind::ExternType,
+        InstantiationSymbolKind::ExternType(extern_ty),
     )
 }
 

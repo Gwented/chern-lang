@@ -12,7 +12,10 @@ use crate::{
     constraints::ArgConstraint,
     lookup::scopes::scopes_concepts::AssociatedScopeKind,
     parser::ast::ast_concepts::{BinaryOp, UnaryOp},
-    semantic::hir::hir_symbols::FuncKind,
+    semantic::hir::{
+        hir_concepts::TypeKind,
+        hir_symbols::{FuncKind, SymbolKindFlat},
+    },
 };
 
 #[derive(Debug)]
@@ -21,6 +24,10 @@ pub enum PresetErr {
     General(SourceDiagnosticBuilder),
     /// Constraint, found type(builtin or user), spans
     Lookup(LookupError),
+    SymbolMismatch {
+        expected_kind: SymbolKindFlat,
+        sp_found_sym_id: SpannedContainer<SymbolId>,
+    },
     FuncConstraintMismatch {
         constraint: ArgConstraint,
         fmtted_ty: ChrnClassifier,

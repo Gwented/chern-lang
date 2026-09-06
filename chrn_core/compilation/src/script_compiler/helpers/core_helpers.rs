@@ -231,7 +231,7 @@ pub fn count_instantiation_bases(bases: &[InstantiationSymbolBase]) -> Instantia
                 counts.merge(count_instantiation_bases(inner));
             }
             InstantiationSymbolKind::Variable(_) => counts.variables += 1,
-            InstantiationSymbolKind::ExternType => (),
+            InstantiationSymbolKind::ExternType(_) => (),
         }
     }
 
